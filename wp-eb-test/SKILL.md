@@ -74,18 +74,27 @@ cat c.txt
 
 Parse the username and password from the file.
 
-### Step 2: Start browser and fetch issue details
+### Step 2: Start browser and login to project management
 
 1. Call `preview_start` to launch the Playwright browser
 2. Store the `serverId`
-3. Navigate to the `issue_url` using `preview_eval`: `window.location.href = '<issue_url>'`
-4. Take `preview_screenshot` -- if a login page appears, log in:
-   - Use `preview_fill` or `preview_eval` to enter the credentials from `c.txt`
+3. Extract the PM base URL from the `issue_url` (e.g., `https://projects.startise.com` from
+   `https://projects.startise.com//fbs-80634`)
+4. Navigate to the PM login page: `window.location.href = '<pm_base_url>/login'`
+   (or just the base URL -- it will redirect to login if not authenticated)
+5. Take `preview_screenshot` to see the login form
+6. Enter credentials from `c.txt`:
+   - Use `preview_fill` or `preview_eval` to fill username/email field
+   - Use `preview_fill` or `preview_eval` to fill password field
    - Click the login/submit button
-   - Wait for redirect, take another screenshot to confirm logged in
-5. Navigate to the issue URL again if redirected away after login
-6. Take `preview_screenshot` of the issue card
-7. Use `preview_snapshot` and `preview_eval` to read the issue details:
+7. Take `preview_screenshot` to confirm login succeeded (dashboard or redirect)
+8. If login fails (wrong credentials, CAPTCHA, 2FA), ask the user for help
+
+### Step 3: Navigate to issue and read details
+
+1. Navigate to the `issue_url`: `window.location.href = '<issue_url>'`
+2. Take `preview_screenshot` of the issue card
+3. Use `preview_snapshot` and `preview_eval` to read the issue details:
    - Issue title
    - Issue description / reproduction steps
    - Assigned branch names (for free, pro, controls -- look for branch references)
@@ -104,12 +113,12 @@ Parse the username and password from the file.
    ISSUE_EOF
    ```
 
-### Step 3: Stop the browser
+### Step 4: Stop the browser
 
 1. Call `preview_stop` with the `serverId`
 2. The browser is done -- issue details are saved to `/tmp/eb-issue-details.md`
 
-### Step 4: Switch branches
+### Step 5: Switch branches
 
 Based on the branch names found in the issue card, switch to the correct branches:
 
@@ -148,12 +157,12 @@ If the issue mentions branches for multiple components, update `scope` according
 If no branch name is found in the issue, ask: "I couldn't find branch names in the issue card.
 Which branches should I check out for free/pro/controls?"
 
-### Step 5: Build
+### Step 6: Build
 
 Run the build scripts for the components in scope (using the build order: controls → free → pro).
 Use `build=yes` since we just switched branches.
 
-### Step 6: Continue to normal workflow
+### Step 7: Continue to normal workflow
 
 The issue details from `/tmp/eb-issue-details.md` now serve as the `fix_file` for Phase 2.
 Continue with Phase 0 → Phase 1 → ... as normal. The issue description becomes the fix details,
