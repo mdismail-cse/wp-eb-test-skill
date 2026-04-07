@@ -583,10 +583,49 @@ Save to `qa-report.md`:
 
 Print the verdict line immediately so the user sees the result.
 
+## Git Safety Rules
+
+**This skill is READ-ONLY for git.** It must never modify any files in the repository or push anything.
+
+**Allowed git commands (read-only):**
+- `git diff` -- reading changes
+- `git log` -- reading commit history
+- `git status` -- checking repo state
+- `git branch` / `git branch -a` -- listing branches
+- `git rev-parse` -- getting branch/commit info
+- `git submodule status` -- checking submodule state
+- `git fetch` -- downloading remote refs (does not modify working tree)
+- `git checkout` / `git switch` -- ONLY for switching branches (allowed in Issue Fetch Flow Step 5)
+- `git pull` -- ONLY for updating after branch switch (allowed in Issue Fetch Flow Step 5)
+
+**NEVER run these commands:**
+- `git add` -- do not stage any files
+- `git commit` -- do not create any commits
+- `git push` -- do not push anything to remote
+- `git merge` -- do not merge branches
+- `git rebase` -- do not rebase
+- `git reset` -- do not reset
+- `git revert` -- do not revert commits
+- `git stash` -- do not stash changes
+- `git cherry-pick` -- do not cherry-pick
+- `git tag` -- do not create tags
+- `git rm` -- do not remove tracked files
+- `git mv` -- do not move tracked files
+- `git clean` -- do not clean untracked files
+
+**NEVER modify source files:**
+- Do not edit, create, or delete any `.php`, `.js`, `.jsx`, `.tsx`, `.css`, `.scss`, `.json`,
+  `.html`, or any other source file in the plugin repos
+- Do not run any command that writes to the repo (e.g., `sed -i`, `> file`, `tee file`)
+- The only file this skill may write is the `qa-report.md` report and `/tmp/eb-issue-details.md`
+
+If you find a bug or issue during testing, **report it in the QA report** -- do not attempt to fix it.
+
 ## Important Notes
 
 - **Essential Blocks only.** This skill tests Essential Blocks free, pro, and controls. Don't
   test other plugins unless the user explicitly asks.
+- **Read-only.** This skill reads and tests code. It never modifies, commits, or pushes anything.
 - **Ask, don't guess.** If you need credentials, URLs, test data, or clarification at ANY point,
   stop and ask. A blocked test is better than a wrong assumption.
 - If `git` fails, ask the user for the diff info another way

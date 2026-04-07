@@ -167,6 +167,20 @@ Three build scripts are included in `wp-eb-test/scripts/`:
 
 All scripts use `pnpm` and accept the plugin directory as the first argument.
 
+## Git safety
+
+This skill is **read-only** for git repositories. It will never modify your code or push anything.
+
+**Allowed:**
+- `git diff`, `git log`, `git status`, `git branch`, `git rev-parse`, `git fetch`
+- `git checkout` / `git pull` -- only when switching branches via issue fetch flow
+
+**Blocked:**
+- `git add`, `git commit`, `git push`, `git merge`, `git rebase`, `git reset`, `git revert`, `git stash`, `git cherry-pick`, `git tag`, `git rm`, `git mv`, `git clean`
+- Editing, creating, or deleting any source file in the plugin repos
+
+If the skill finds a bug, it reports it in `qa-report.md` -- it never attempts to fix it.
+
 ## License
 
 MIT
