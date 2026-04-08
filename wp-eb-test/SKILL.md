@@ -24,6 +24,12 @@ three tightly coupled codebases:
 Controls is a submodule inside the free plugin. Changes to controls affect every block that imports
 from it -- in both free AND pro. Always think about this dependency chain.
 
+**Important: Always use `git -C <path>` instead of `cd <path> && git ...`.**
+This avoids permission prompts for chained commands. For example:
+- Instead of `cd /path/to/plugin && git log` use `git -C /path/to/plugin log`
+- Instead of `cd /path && grep ...` use `grep ... /path/`
+- For non-git commands, use absolute paths instead of `cd` chains
+
 ## Arguments
 
 | Argument | Required | Description |
@@ -124,28 +130,23 @@ Based on the branch names found in the issue card, switch to the correct branche
 
 **For Free plugin:**
 ```bash
-cd <essential-blocks-dir>
-git fetch origin
-git checkout <free-branch-name>
-git pull origin <free-branch-name>
+git -C <essential-blocks-dir> fetch origin
+git -C <essential-blocks-dir> checkout <free-branch-name>
+git -C <essential-blocks-dir> pull origin <free-branch-name>
 ```
 
 **For Controls submodule (if a controls branch is mentioned):**
 ```bash
-cd src/controls
-git fetch origin
-git checkout <controls-branch-name>
-git pull origin <controls-branch-name>
-cd -
+git -C <essential-blocks-dir>/src/controls fetch origin
+git -C <essential-blocks-dir>/src/controls checkout <controls-branch-name>
+git -C <essential-blocks-dir>/src/controls pull origin <controls-branch-name>
 ```
 
 **For Pro plugin (if a pro branch is mentioned):**
 ```bash
-cd <essential-blocks-pro-dir>
-git fetch origin
-git checkout <pro-branch-name>
-git pull origin <pro-branch-name>
-cd -
+git -C <essential-blocks-pro-dir> fetch origin
+git -C <essential-blocks-pro-dir> checkout <pro-branch-name>
+git -C <essential-blocks-pro-dir> pull origin <pro-branch-name>
 ```
 
 If the issue mentions branches for multiple components, update `scope` accordingly:
@@ -278,10 +279,12 @@ Follow these phases in order.
 Auto-detect if on main/master:
 
 ```bash
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
-  echo "ON_MAIN_BRANCH"
-fi
+git rev-parse --abbrev-ref HEAD 2>/dev/null
+```
+
+Use `git -C <path>` if checking from a different directory:
+```bash
+git -C <essential-blocks-dir> rev-parse --abbrev-ref HEAD
 ```
 
 If on main/master and `mode` not specified, ask:
@@ -304,13 +307,15 @@ Only diff components that are in scope.
 
 #### 1a: Diff Essential Blocks Free
 
-```bash
-# From the essential-blocks/ directory
-BASE=$(git rev-parse --verify origin/main 2>/dev/null && echo "origin/main" || echo "origin/master")
+Use `git -C <path>` to avoid `cd` into directories:
 
-git diff $BASE --stat
-git diff $BASE -- '*.php' '*.js' '*.jsx' '*.tsx' '*.css' '*.scss' '*.json'
-git log $BASE..HEAD --oneline
+```bash
+EB_FREE="<essential-blocks-dir>"
+BASE=$(git -C "$EB_FREE" rev-parse --verify origin/main 2>/dev/null && echo "origin/main" || echo "origin/master")
+
+git -C "$EB_FREE" diff $BASE --stat
+git -C "$EB_FREE" diff $BASE -- '*.php' '*.js' '*.jsx' '*.tsx' '*.css' '*.scss' '*.json'
+git -C "$EB_FREE" log $BASE..HEAD --oneline
 ```
 
 #### 1b: Diff Controls submodule (if in scope)
@@ -318,35 +323,31 @@ git log $BASE..HEAD --oneline
 Controls has its own git history inside `src/controls/`:
 
 ```bash
-cd src/controls
-SUB_BASE=$(git rev-parse --verify origin/main 2>/dev/null && echo "origin/main" || echo "origin/master")
-git diff $SUB_BASE --stat
-git diff $SUB_BASE -- '*.php' '*.js' '*.jsx' '*.tsx' '*.css' '*.scss' '*.json'
-git log $SUB_BASE..HEAD --oneline
-cd -
+EB_CONTROLS="<essential-blocks-dir>/src/controls"
+SUB_BASE=$(git -C "$EB_CONTROLS" rev-parse --verify origin/main 2>/dev/null && echo "origin/main" || echo "origin/master")
+
+git -C "$EB_CONTROLS" diff $SUB_BASE --stat
+git -C "$EB_CONTROLS" diff $SUB_BASE -- '*.php' '*.js' '*.jsx' '*.tsx' '*.css' '*.scss' '*.json'
+git -C "$EB_CONTROLS" log $SUB_BASE..HEAD --oneline
 ```
 
 If the submodule pointer changed in the parent but no changes inside, check what commit range changed:
 
 ```bash
-git diff $BASE -- src/controls
-# Then inside src/controls:
-cd src/controls
-git log <old_commit>..<new_commit> --oneline
-git diff <old_commit>..<new_commit>
-cd -
+git -C "$EB_FREE" diff $BASE -- src/controls
+git -C "$EB_CONTROLS" log <old_commit>..<new_commit> --oneline
+git -C "$EB_CONTROLS" diff <old_commit>..<new_commit>
 ```
 
 #### 1c: Diff Essential Blocks Pro (if in scope)
 
 ```bash
-# From the essential-blocks-pro/ directory
-cd ../essential-blocks-pro  # or wherever pro lives relative to free
-PRO_BASE=$(git rev-parse --verify origin/main 2>/dev/null && echo "origin/main" || echo "origin/master")
-git diff $PRO_BASE --stat
-git diff $PRO_BASE -- '*.php' '*.js' '*.jsx' '*.tsx' '*.css' '*.scss' '*.json'
-git log $PRO_BASE..HEAD --oneline
-cd -
+EB_PRO="<essential-blocks-pro-dir>"
+PRO_BASE=$(git -C "$EB_PRO" rev-parse --verify origin/main 2>/dev/null && echo "origin/main" || echo "origin/master")
+
+git -C "$EB_PRO" diff $PRO_BASE --stat
+git -C "$EB_PRO" diff $PRO_BASE -- '*.php' '*.js' '*.jsx' '*.tsx' '*.css' '*.scss' '*.json'
+git -C "$EB_PRO" log $PRO_BASE..HEAD --oneline
 ```
 
 If pro path is unclear, ask: "Where is the essential-blocks-pro repo relative to the free one?"
@@ -357,21 +358,19 @@ After collecting diffs, trace the impact:
 
 - **Controls changed?** Find all blocks importing from `src/controls/`:
   ```bash
-  grep -rl "controls" --include="*.js" --include="*.jsx" src/blocks/
+  grep -rl "controls" --include="*.js" --include="*.jsx" "$EB_FREE/src/blocks/"
   ```
   These blocks need testing in both free and pro (if in scope).
 
 - **Free hook changed?** Check if pro listens to it:
   ```bash
-  # In free: find the hook name
-  grep -r "do_action\|apply_filters" --include="*.php" -h | grep "<hook_name>"
-  # In pro: check for listeners
-  grep -r "add_action\|add_filter" --include="*.php" -h ../essential-blocks-pro/ | grep "<hook_name>"
+  grep -r "do_action\|apply_filters" --include="*.php" -h "$EB_FREE" | grep "<hook_name>"
+  grep -r "add_action\|add_filter" --include="*.php" -h "$EB_PRO" | grep "<hook_name>"
   ```
 
 - **Block editor script changed?** Check if pro extends that block:
   ```bash
-  grep -rl "<block_name>" --include="*.js" --include="*.php" ../essential-blocks-pro/
+  grep -rl "<block_name>" --include="*.js" --include="*.php" "$EB_PRO"
   ```
 
 Summarize in 3-5 bullet points, labeling each as Free / Controls / Pro.
