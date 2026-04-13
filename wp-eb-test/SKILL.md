@@ -12,624 +12,290 @@ description: >
 
 # Essential Blocks QA Tester
 
-You are a QA engineer testing the Essential Blocks WordPress plugin ecosystem. This consists of
-three tightly coupled codebases:
+You are a QA engineer testing the Essential Blocks WordPress plugin ecosystem:
 
 | Component | Path | Description |
 |-----------|------|-------------|
-| **Free** | `/wp-content/plugins/essential-blocks/` | The free Essential Blocks plugin |
-| **Controls** | `/wp-content/plugins/essential-blocks/src/controls/` | Git submodule -- shared block controls used by both free and pro |
-| **Pro** | `/wp-content/plugins/essential-blocks-pro/` | The pro add-on plugin |
+| **Free** | `essential-blocks/` | The free Essential Blocks plugin |
+| **Controls** | `essential-blocks/src/controls/` | Git submodule -- shared controls used by free and pro |
+| **Pro** | `essential-blocks-pro/` | The pro add-on plugin |
 
-Controls is a submodule inside the free plugin. Changes to controls affect every block that imports
-from it -- in both free AND pro. Always think about this dependency chain.
+Controls is a submodule inside free. Changes to controls affect every block that imports from it.
 
-**Important: Always use `git -C <path>` instead of `cd <path> && git ...`.**
-This avoids permission prompts for chained commands. For example:
-- Instead of `cd /path/to/plugin && git log` use `git -C /path/to/plugin log`
-- Instead of `cd /path && grep ...` use `grep ... /path/`
-- For non-git commands, use absolute paths instead of `cd` chains
+**Always use `git -C <path>` instead of `cd <path> && git ...` to avoid permission prompts.**
+
+## Defaults
+
+On startup, check for `defaults.json` in the plugin directory:
+
+```bash
+cat defaults.json 2>/dev/null
+```
+
+Example `defaults.json`:
+```json
+{
+  "site_url": "http://live-zip-update.local/",
+  "wp_user": "ismail",
+  "wp_pass": "007",
+  "scope": "all",
+  "build": "yes",
+  "test_areas": ["editor", "fse", "frontend"],
+  "analysis": "deep",
+  "check_dependents": true,
+  "screenshots": true
+}
+```
+
+Any value in `defaults.json` is used unless the user explicitly overrides it in their command.
+If `defaults.json` doesn't exist, ask for required values as needed.
 
 ## Arguments
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `site_url` | Yes | The WordPress site URL to test (local or remote) |
-| `issue_url` | No | Project management issue URL (e.g., `https://projects.startise.com//fbs-80634`). If given, fetches issue details and branch info automatically |
-| `scope` | No | What to test: `free`, `pro`, `controls`, `free+pro`, `free+controls`, `all`. Defaults to `free` |
-| `fix_file` | No | Path to a file describing the fix/issue details |
-| `focus` | No | Specific block or area to focus on (e.g., `advanced heading`, `post grid`, `slider`) |
-| `branch` | No | Branch to compare against (defaults to `main`, falls back to `master`) |
-| `build` | No | `yes`, `no`, or `auto` (default). `auto` builds only if dist/build artifacts are stale |
-| `mode` | No | `diff` (default) or `investigate`. Use `investigate` to skip diffing on main/master |
+| Argument | Required | Description | Default |
+|----------|----------|-------------|---------|
+| `site_url` | Yes* | WordPress site URL | from `defaults.json` |
+| `issue_url` | No | PM issue URL -- fetches details, branches, builds automatically | -- |
+| `scope` | No | `free`, `pro`, `controls`, `free+pro`, `free+controls`, `all` | `free` or defaults.json |
+| `fix_file` | No | Path to fix/issue details file | -- |
+| `focus` | No | Specific block or area (e.g., `advanced heading`, `slider`) | -- |
+| `branch` | No | Branch to diff against | `main` / `master` |
+| `build` | No | `yes`, `no`, `auto` | `auto` or defaults.json |
+| `mode` | No | `diff` or `investigate` | `diff` |
+| `screenshots` | No | `yes` / `no` -- skip taking screenshots | `yes` or defaults.json |
+| `test_areas` | No | `editor`, `fse`, `frontend`, or `all` | `all` or defaults.json |
+| `analysis` | No | `normal` or `deep` -- deep traces dependency chains | `normal` or defaults.json |
 
-Example invocations:
-- `/wp-eb-test https://dev.local` (free only, auto build)
-- `/wp-eb-test https://dev.local issue_url=https://projects.startise.com//fbs-80634` (fetch issue, switch branches, test)
-- `/wp-eb-test https://dev.local scope=free+pro`
-- `/wp-eb-test https://dev.local scope=all` (free + pro + controls)
-- `/wp-eb-test https://dev.local scope=controls` (controls submodule only)
-- `/wp-eb-test https://dev.local scope=free build=yes focus="advanced heading"`
-- `/wp-eb-test https://dev.local fix_file=./fix-notes.md focus="post grid pagination"`
-- `/wp-eb-test https://dev.local mode=investigate focus="slider block"` (no diff, just test)
+*Required unless set in `defaults.json`.
 
-## Credentials File
+Examples:
+- `/wp-eb-test` (uses all defaults)
+- `/wp-eb-test focus="slider"` (defaults + focus)
+- `/wp-eb-test issue_url=https://projects.startise.com//fbs-80634`
+- `/wp-eb-test scope=free build=no mode=investigate`
 
-The plugin directory contains a file named `c.txt` with project management login credentials.
-Read this file at the start of the workflow whenever `issue_url` is provided:
+## Credentials
 
-```bash
-cat c.txt
-```
+Single source of truth for credentials. Check in this order, stop at first match:
 
-The file contains the username and password needed to log into the project management tool
-(e.g., `https://projects.startise.com`). Parse it and use the credentials for the PM login.
+1. **Inline in command**: `user:X pass:Y`
+2. **`defaults.json`**: `wp_user` + `wp_pass` fields
+3. **Ask the user**: "What are the WP admin credentials?"
+
+For PM credentials (only when `issue_url` given):
+1. **`c.txt`** in plugin directory
+2. **Ask the user**: "I need PM login credentials for [URL]. Username and password?"
+
+Never ask for credentials already provided. Never ask twice.
 
 ## Issue Fetch Flow
 
-**This flow runs ONLY when `issue_url` is provided.** If no `issue_url`, skip entirely and
-proceed with the normal workflow (Phase 0 onward).
+**Only runs when `issue_url` is provided.** Otherwise skip to Phase 0.
 
-When `issue_url` is given, run this before anything else:
-
-### Step 1: Read credentials
-
-```bash
-cat c.txt
-```
-
-Parse the username and password from the file.
-
-### Step 2: Start browser and login to project management
-
-1. Call `preview_start` to launch the Playwright browser
-2. Store the `serverId`
-3. Extract the PM base URL from the `issue_url` (e.g., `https://projects.startise.com` from
-   `https://projects.startise.com//fbs-80634`)
-4. Navigate to the PM login page: `window.location.href = '<pm_base_url>/login'`
-   (or just the base URL -- it will redirect to login if not authenticated)
-5. Take `preview_screenshot` to see the login form
-6. Enter credentials from `c.txt`:
-   - Use `preview_fill` or `preview_eval` to fill username/email field
-   - Use `preview_fill` or `preview_eval` to fill password field
-   - Click the login/submit button
-7. Take `preview_screenshot` to confirm login succeeded (dashboard or redirect)
-8. If login fails (wrong credentials, CAPTCHA, 2FA), ask the user for help
-
-### Step 3: Navigate to issue and read details
-
-1. Navigate to the `issue_url`: `window.location.href = '<issue_url>'`
-2. Take `preview_screenshot` of the issue card
-3. Use `preview_snapshot` and `preview_eval` to read the issue details:
-   - Issue title
-   - Issue description / reproduction steps
-   - Assigned branch names (for free, pro, controls -- look for branch references)
-   - Priority, labels, linked PRs
-   - Any attachments or screenshots in the issue
-8. Save all issue details to a temp file:
+1. Read PM credentials (from `c.txt` or ask)
+2. Start browser (`preview_start`), store `serverId`
+3. Navigate to PM base URL, login with credentials
+4. Navigate to `issue_url`, read issue details using `preview_snapshot` + `preview_eval`:
+   - Title, description, reproduction steps, branch names, priority, labels
+5. Save to `/tmp/eb-issue-details.md` (use `references/issue-template.md` format)
+6. Stop browser (`preview_stop`)
+7. Switch branches for each component found in issue:
    ```bash
-   cat > /tmp/eb-issue-details.md << 'ISSUE_EOF'
-   # Issue: [title]
-   **URL:** [issue_url]
-   **Branch(es):** [branch names found]
-   **Description:** [description]
-   **Reproduction Steps:** [steps if provided]
-   **Labels:** [labels]
-   **Priority:** [priority]
-   ISSUE_EOF
+   git -C <component_path> fetch origin
+   git -C <component_path> checkout <branch>
+   git -C <component_path> pull origin <branch>
    ```
+   Auto-set `scope` based on which branches found.
+8. Build all in-scope components (controls → free → pro)
+9. Continue to Phase 0
 
-### Step 4: Stop the browser
-
-1. Call `preview_stop` with the `serverId`
-2. The browser is done -- issue details are saved to `/tmp/eb-issue-details.md`
-
-### Step 5: Switch branches
-
-Based on the branch names found in the issue card, switch to the correct branches:
-
-**For Free plugin:**
-```bash
-git -C <essential-blocks-dir> fetch origin
-git -C <essential-blocks-dir> checkout <free-branch-name>
-git -C <essential-blocks-dir> pull origin <free-branch-name>
-```
-
-**For Controls submodule (if a controls branch is mentioned):**
-```bash
-git -C <essential-blocks-dir>/src/controls fetch origin
-git -C <essential-blocks-dir>/src/controls checkout <controls-branch-name>
-git -C <essential-blocks-dir>/src/controls pull origin <controls-branch-name>
-```
-
-**For Pro plugin (if a pro branch is mentioned):**
-```bash
-git -C <essential-blocks-pro-dir> fetch origin
-git -C <essential-blocks-pro-dir> checkout <pro-branch-name>
-git -C <essential-blocks-pro-dir> pull origin <pro-branch-name>
-```
-
-If the issue mentions branches for multiple components, update `scope` accordingly:
-- Only free branch → `scope=free`
-- Free + controls branches → `scope=free+controls`
-- Free + pro branches → `scope=free+pro`
-- All three → `scope=all`
-
-If no branch name is found in the issue, ask: "I couldn't find branch names in the issue card.
-Which branches should I check out for free/pro/controls?"
-
-### Step 6: Build
-
-Run the build scripts for the components in scope (using the build order: controls → free → pro).
-Use `build=yes` since we just switched branches.
-
-### Step 7: Continue to normal workflow
-
-The issue details from `/tmp/eb-issue-details.md` now serve as the `fix_file` for Phase 2.
-Continue with Phase 0 → Phase 1 → ... as normal. The issue description becomes the fix details,
-and the branch info determines the scope and diff targets.
-
-## Test Scope & Build
-
-### Determine scope
-
-If the user didn't specify `scope`, ask:
-
-```
-What should I test?
-- Free plugin only
-- Free + Pro
-- Free + Controls submodule
-- All (Free + Pro + Controls)
-```
-
-### Scope rules
+## Scope & Build
 
 | Scope | Diff | Build | Test |
 |-------|------|-------|------|
-| `free` | `essential-blocks/` | Controls (dependency) + Free | Free blocks and features |
-| `pro` | `essential-blocks-pro/` | Pro | Pro-only blocks and features |
-| `controls` | `essential-blocks/src/controls/` | Controls, then Free (consumer) | Controls + all blocks using them |
-| `free+pro` | Both plugin dirs | Controls + Free + Pro | Everything, including cross-plugin |
-| `free+controls` | Free + `src/controls/` | Controls + Free | Controls changes + consuming blocks |
-| `all` | All three | Controls + Free + Pro | Full ecosystem test |
+| `free` | free repo | Controls + Free | Free blocks |
+| `pro` | pro repo | Pro | Pro blocks |
+| `controls` | `src/controls/` | Controls + Free | Controls + consuming blocks |
+| `free+pro` | both | Controls + Free + Pro | Everything |
+| `all` | all three | Controls + Free + Pro | Full ecosystem |
 
-When `controls` is in scope, always rebuild the free plugin too -- it consumes the controls.
+**Build order:** Controls (1st) → Free (2nd) → Pro (3rd).
 
-### Build step
-
-Build scripts are at `scripts/` relative to this skill file:
-
+Build scripts at `scripts/` relative to this SKILL.md. When `build=auto`, run:
 ```bash
-SKILL_DIR="$(dirname "<path-to-this-SKILL.md>")"
-
-# Build controls submodule
-bash "$SKILL_DIR/scripts/build-controls.sh" "<eb-free-dir>" "src/controls"
-
-# Build free plugin (auto-builds controls as dependency)
-bash "$SKILL_DIR/scripts/build-free.sh" "<eb-free-dir>"
-
-# Build pro plugin
-bash "$SKILL_DIR/scripts/build-pro.sh" "<eb-pro-dir>"
+bash "$SKILL_DIR/scripts/check-build.sh" "<component_dir>"
 ```
+If exit code 0 → build needed. Ask: "Build artifacts look stale. Should I build?"
 
-**When to build (`build` argument):**
+## Preflight Checks (Phase 0)
 
-- `build=yes` -- Always build before testing
-- `build=no` -- Skip building, test with current build
-- `build=auto` (default) -- Check if build is needed:
-  ```bash
-  # Check if dist/build output exists
-  if [ ! -d "dist" ] || [ -z "$(ls -A dist/ 2>/dev/null)" ]; then
-    echo "BUILD_NEEDED"
-  fi
-  # Check if source is newer than build
-  NEWEST_SRC=$(find src/ -name '*.js' -o -name '*.jsx' -o -name '*.tsx' -o -name '*.scss' -o -name '*.php' | xargs stat -f '%m' | sort -rn | head -1)
-  NEWEST_DIST=$(find dist/ -type f | xargs stat -f '%m' | sort -rn | head -1)
-  if [ "$NEWEST_SRC" -gt "$NEWEST_DIST" ]; then
-    echo "BUILD_NEEDED"
-  fi
-  ```
-  If build needed, ask: "Build artifacts look stale or missing. Should I run the build first?"
+Before testing, verify prerequisites. Ask for anything missing.
 
-**Build order:**
-1. Controls first -- free and pro depend on it
-2. Free second -- depends on controls
-3. Pro last -- may depend on free
+**Tool checks:**
+- Browser MCP: try `preview_list`. If unavailable, ask: "No browser MCP available. Skip visual tests or set it up?"
+- Git: `git -C <path> rev-parse --is-inside-work-tree`. If fails, ask for correct path.
+- pnpm: `which pnpm`. If missing, ask: "Skip building or install pnpm?"
 
-If a build fails, show the error and ask: "The [component] build failed. Should I try to fix it,
-or do you want to handle it?"
-
-## Phase 0: Gather Missing Information
-
-Before testing, check what you have and ask for what's missing. Use `AskUserQuestion`.
-
-**Always ask if not provided:**
-
-- **Site URL**: "What's the WordPress site URL I should test against?"
-- **WP Admin credentials**: If code changes involve admin/editor/Gutenberg areas, ask:
-  "What are the WP admin login credentials?"
-
-**Ask based on what the code changes touch:**
-
-- **Specific block to test on**: If a block changed, ask:
-  "Which page has the [block name] block I should check? (URL or title)"
-- **Test data**: If the block displays dynamic data (post grid, query, etc.), ask:
-  "Is there test data on the site for this, or should I create a test page?"
-- **Pro license**: If testing pro features, ask:
-  "Is the pro plugin activated with a license on the test site?"
-- **Browser/device**: If CSS or responsive changes, ask:
-  "Any specific screen sizes to check? (mobile, tablet, desktop)"
-- **Editor vs Frontend**: "Should I test in the Gutenberg editor, the frontend, or both?"
-- **Cache**: If relevant, ask about caching plugins
-
-**Free + Pro specific:**
-- If scope includes pro: "Are both free and pro active on the test site?"
-- If controls changed: "Which blocks use this control? Should I test all of them?"
-
-Bundle questions into 2-4 per `AskUserQuestion`. Do a quick `git diff --stat` scan first to
-know what areas are affected, then ask relevant questions.
+**Don't ask for everything upfront.** Only ask what's clearly missing right now.
+Ask context-specific questions later when you actually need them (e.g., "which page has this block?"
+when you're about to test that block, not at the start).
 
 ## Workflow
 
-Follow these phases in order.
-
 ### Mode Detection
 
-Auto-detect if on main/master:
-
-```bash
-git rev-parse --abbrev-ref HEAD 2>/dev/null
-```
-
-Use `git -C <path>` if checking from a different directory:
 ```bash
 git -C <essential-blocks-dir> rev-parse --abbrev-ref HEAD
 ```
 
-If on main/master and `mode` not specified, ask:
-"You're on `$CURRENT_BRANCH`. No branch to diff against. Would you like to:"
-- **Investigate mode** -- skip diffing, test a specific issue or area directly
-- **Specify a branch** -- diff against a different branch
+If on main/master and `mode` not set, ask: investigate mode or specify a branch?
 
-**If `mode=investigate`:** Skip Phase 1 and Phase 4. Go to:
-1. Phase 0 (gather info) -- ask what to investigate
-2. Phase 2 (fix details) -- if provided
-3. Phase 3 (checklist) -- based on description, not diff
-4. Phase 5 (visual) -- primary testing method
-5. Phase 6 (report)
+**Investigate mode:** Skip Phase 1 and Phase 4. Go Phase 0 → 2 → 3 → 5 → 6.
 
 ### Phase 1: Analyze Code Changes
 
 **Skip if `mode=investigate`.**
 
-Only diff components that are in scope.
-
-#### 1a: Diff Essential Blocks Free
-
-Use `git -C <path>` to avoid `cd` into directories:
-
+For each component in scope, run:
 ```bash
-EB_FREE="<essential-blocks-dir>"
-BASE=$(git -C "$EB_FREE" rev-parse --verify origin/main 2>/dev/null && echo "origin/main" || echo "origin/master")
-
-git -C "$EB_FREE" diff $BASE --stat
-git -C "$EB_FREE" diff $BASE -- '*.php' '*.js' '*.jsx' '*.tsx' '*.css' '*.scss' '*.json'
-git -C "$EB_FREE" log $BASE..HEAD --oneline
+BASE=$(git -C "$COMP_PATH" rev-parse --verify origin/main 2>/dev/null && echo "origin/main" || echo "origin/master")
+git -C "$COMP_PATH" diff $BASE --stat
+git -C "$COMP_PATH" diff $BASE -- '*.php' '*.js' '*.jsx' '*.tsx' '*.css' '*.scss' '*.json'
+git -C "$COMP_PATH" log $BASE..HEAD --oneline
 ```
 
-#### 1b: Diff Controls submodule (if in scope)
+Where `$COMP_PATH` is the path for free, controls, or pro respectively.
 
-Controls has its own git history inside `src/controls/`:
-
-```bash
-EB_CONTROLS="<essential-blocks-dir>/src/controls"
-SUB_BASE=$(git -C "$EB_CONTROLS" rev-parse --verify origin/main 2>/dev/null && echo "origin/main" || echo "origin/master")
-
-git -C "$EB_CONTROLS" diff $SUB_BASE --stat
-git -C "$EB_CONTROLS" diff $SUB_BASE -- '*.php' '*.js' '*.jsx' '*.tsx' '*.css' '*.scss' '*.json'
-git -C "$EB_CONTROLS" log $SUB_BASE..HEAD --oneline
-```
-
-If the submodule pointer changed in the parent but no changes inside, check what commit range changed:
-
+For controls submodule pointer changes:
 ```bash
 git -C "$EB_FREE" diff $BASE -- src/controls
 git -C "$EB_CONTROLS" log <old_commit>..<new_commit> --oneline
-git -C "$EB_CONTROLS" diff <old_commit>..<new_commit>
 ```
 
-#### 1c: Diff Essential Blocks Pro (if in scope)
-
+**Map dependencies** (especially when `analysis=deep`):
 ```bash
-EB_PRO="<essential-blocks-pro-dir>"
-PRO_BASE=$(git -C "$EB_PRO" rev-parse --verify origin/main 2>/dev/null && echo "origin/main" || echo "origin/master")
-
-git -C "$EB_PRO" diff $PRO_BASE --stat
-git -C "$EB_PRO" diff $PRO_BASE -- '*.php' '*.js' '*.jsx' '*.tsx' '*.css' '*.scss' '*.json'
-git -C "$EB_PRO" log $PRO_BASE..HEAD --oneline
+grep -rl "controls" --include="*.js" --include="*.jsx" "$EB_FREE/src/blocks/"
 ```
+When `analysis=deep`, also trace the full import chain: changed file → who imports it → who imports that → test all of them.
 
-If pro path is unclear, ask: "Where is the essential-blocks-pro repo relative to the free one?"
-
-#### 1d: Map cross-component dependencies
-
-After collecting diffs, trace the impact:
-
-- **Controls changed?** Find all blocks importing from `src/controls/`:
-  ```bash
-  grep -rl "controls" --include="*.js" --include="*.jsx" "$EB_FREE/src/blocks/"
-  ```
-  These blocks need testing in both free and pro (if in scope).
-
-- **Free hook changed?** Check if pro listens to it:
-  ```bash
-  grep -r "do_action\|apply_filters" --include="*.php" -h "$EB_FREE" | grep "<hook_name>"
-  grep -r "add_action\|add_filter" --include="*.php" -h "$EB_PRO" | grep "<hook_name>"
-  ```
-
-- **Block editor script changed?** Check if pro extends that block:
-  ```bash
-  grep -rl "<block_name>" --include="*.js" --include="*.php" "$EB_PRO"
-  ```
+When `check_dependents=true`, for every changed file find all files that reference it:
+```bash
+grep -rl "<changed_filename>" --include="*.js" --include="*.jsx" --include="*.php" "$EB_FREE" "$EB_PRO"
+```
 
 Summarize in 3-5 bullet points, labeling each as Free / Controls / Pro.
 
 ### Phase 2: Read Fix Details
 
-Read fix details from one of these sources (in priority order):
-1. `/tmp/eb-issue-details.md` -- if issue fetch flow ran (issue_url was provided)
-2. `fix_file` path -- if user provided one
-3. Inline description from the user's prompt
-4. If none exist, note "No fix description provided" and proceed from code diff alone.
+Priority order:
+1. `/tmp/eb-issue-details.md` (from issue fetch)
+2. `fix_file` path
+3. Inline description
+4. "No fix description provided"
 
 Cross-reference with code changes. Flag discrepancies.
 
 ### Phase 3: Build Test Checklist
 
-Generate a focused checklist based on the actual code changes. Keep it short and relevant -- only
-include tests that matter for THIS specific change. Read the code to know exactly what values and
-states exist, then test those specifically.
+Generate focused test cases based on actual code changes. Be precise, not exhaustive.
+Only include tests relevant to THIS change. Read the code to know exact values and states.
 
-**Key principle:** Be precise, not exhaustive. If the change is a CSS fix on the heading block,
-don't test accordion functionality. Only include edge cases that are realistically affected.
-
-Pick applicable tests from the categories below. Skip entire categories if they don't apply to
-the current change.
-
----
+Pick applicable categories. Skip what doesn't apply.
 
 **Editor tests** (if block editor code changed):
-- Block inserts correctly, renders default state, no console errors
-- Changed controls work: test each option value the code defines (read the source -- if it has
-  `left`, `center`, `right`, test all three, not just one)
-- Range/number controls: test min, max, and a mid value
-- Toggle/boolean controls: on → off → on
-- Color controls: pick, clear, custom hex
-- Responsive controls: verify desktop/tablet/mobile values save independently
-- Save → reload editor → block restores with all settings intact
-- No block validation error ("This block contains unexpected content")
+- Block inserts, renders default state, no console errors
+- Changed controls: test each option value the code defines
+- Range controls: min, max, mid. Toggles: on/off/on. Colors: pick, clear, hex
+- Responsive: desktop/tablet/mobile values save independently
+- Save → reload → block restores intact, no validation error
 
-**Frontend tests** (if rendering or styles changed):
-- Block output matches editor preview
-- CSS classes and inline styles render correctly
-- Interactive JS works (sliders, tabs, accordions, etc.) -- no console errors
-- Multiple instances on same page work independently
+**FSE tests** (if `test_areas` includes `fse`):
+- Block works in Full Site Editor (site-editor.php)
+- Template parts and patterns render correctly
+- Global styles don't conflict with block styles
 
-**Edge cases** (pick only what's relevant to the change):
-- Empty/default state block -- no broken layout
-- Special characters in text fields (`"`, `<`, `>`, `&`, emoji) -- properly escaped
-- Block inside Group/Columns container -- spacing still correct
-- Responsive: check desktop, tablet (768px), mobile (375px) if CSS changed
-- Dynamic blocks: zero results, single item, many items -- if data query changed
-- Old saved blocks still render after attribute changes (no validation error)
-- Undo/redo preserves block state
+**Frontend tests** (if rendering/styles changed):
+- Block output matches editor. CSS classes and styles correct
+- Interactive JS works (sliders, tabs, accordions). No console errors
+- Multiple instances work independently
 
-**Controls tests** (when `src/controls/` changed):
-- List blocks that import the changed control (grep from Phase 1d)
-- For each consuming block: control renders, value saves, frontend reflects it
-- Default values preserved after the change
-- Control works in both free and pro blocks (if in scope)
+**Edge cases** (only what's relevant):
+- Empty/default state, special characters, block in containers
+- Responsive breakpoints if CSS changed
+- Dynamic blocks: zero/single/many items if query changed
+- Old saved blocks render after attribute changes
+
+**Controls tests** (when `src/controls/` in scope):
+- List consuming blocks (grep from Phase 1), test each
+- Default values preserved, control works in free and pro
 
 **Free + Pro tests** (when both in scope):
-- Free works alone (pro deactivated) -- no errors
-- Both active -- pro extends free correctly, no duplicate controls
-- Pro deactivated after use -- blocks degrade gracefully, no validation errors
+- Free works alone (pro off), both active, pro deactivated after use
 
-**Regression** (quick checks on related areas):
-- Other blocks sharing the same changed controls -- still render
-- EB global styles/scripts still load
-- Admin settings page still works (if admin code touched)
+**Regression**: related blocks, shared controls, global EB styles, admin pages
 
-**Security** (only if the code handles user input, AJAX, or DB queries):
-- User input sanitized (`esc_html`, `sanitize_text_field`)
-- Nonce verification on form/AJAX handlers
-- Capability checks on privileged actions
-- `$wpdb->prepare()` on custom queries
+**Security** (if code handles user input/AJAX/DB):
+- Sanitization, nonce, capability checks, `$wpdb->prepare()`
 
----
-
-Format:
-```
-[#] [Free/Pro/Controls] Short test description → Expected result
-```
-
-Keep the total checklist to **10-25 items** depending on the change size. A single-file CSS fix
-might need 5-8 tests. A control refactor across multiple blocks might need 20-25.
+Format: `[#] [Free/Pro/Controls] Description → Expected result`
+Keep to **10-25 items**.
 
 ### Phase 4: Code Analysis Verdict
 
 **Skip if `mode=investigate`.**
 
-For each test item, verdict from code alone:
-- **PASS (code)**: Clearly handled correctly
-- **NEEDS VISUAL**: Needs browser check
-- **CONCERN**: Might be wrong -- explain why
-
-Check for:
-- Missing `sanitize_text_field`, `esc_html`, `wp_kses`
-- Missing `wp_verify_nonce`, `check_ajax_referer`
-- Missing `current_user_can`
-- Unescaped output (`esc_attr`, `esc_html`, `esc_url`)
-- Raw `$wpdb` queries without `->prepare()`
-- Hardcoded strings (should use `__()`, `_e()`)
-- Block validation: does the save function output match what's expected?
+For each test: **PASS (code)**, **NEEDS VISUAL**, or **CONCERN** (explain why).
+Check: sanitization, nonces, capabilities, escaping, prepared queries, block validation.
 
 ### Phase 5: Visual Verification
 
 Test items marked "NEEDS VISUAL" (or all items in investigate mode).
 
-#### 5a: Start the browser server
+**5a: Start browser**
+1. `preview_start`, store `serverId`
+2. Navigate to site URL, confirm loaded
+3. If unreachable, ask: "Is the dev server running?"
 
-Start Playwright via Claude Preview MCP:
+**5b: Test**
 
-1. Check if `.claude/launch.json` has a config. If not, create a minimal one or use `preview_start`
-   to launch the browser
-2. Navigate to the site URL using `preview_eval`: `window.location.href = '<site_url>'`
-3. Take `preview_screenshot` to confirm site loaded
-4. **Store the `serverId`** for all subsequent calls and cleanup
+Test in the areas specified by `test_areas`:
+- **editor**: Open Gutenberg post editor, test block
+- **fse**: Open Full Site Editor, test block in templates
+- **frontend**: Save the page, view frontend, verify output
 
-If site unreachable, ask: "Can't reach [URL]. Is the dev server running?"
+Log in to wp-admin using credentials (from Credentials section).
+When you need a specific page/block, ask at that moment: "Which page has [block]?"
 
-#### 5b: Navigate and verify
+For each test:
+1. Navigate with `preview_eval`
+2. If `screenshots=yes`: `preview_screenshot`
+3. `preview_inspect` for CSS, `preview_snapshot` for text/structure
+4. `preview_console_logs` for JS errors
+5. Record: **PASS (visual)**, **FAIL (visual)**, or **BLOCKED**
 
-1. Log in to wp-admin if needed (ask for credentials if not gathered in Phase 0)
-2. For **editor tests**: Navigate to a page with the target block, open the editor
-3. For **frontend tests**: View the page on the frontend
+On errors: check console, network, screenshot error state. Record as FAIL.
 
-**During testing, always ask rather than guess:**
-- Need a specific block on a page? Ask: "Which page has the [block] I should test?"
-- Need settings enabled? Ask: "Should I enable [setting]?"
-- Blocked by anything? Ask before skipping
-
-**For each visual test item:**
-1. Navigate with `preview_eval` (`window.location.href`)
-2. `preview_screenshot` for visual state
-3. `preview_inspect` for CSS/style checks
-4. `preview_snapshot` for text/structure verification
-5. `preview_console_logs` for JS errors
-6. Record: **PASS (visual)**, **FAIL (visual)**, or **BLOCKED**
-
-**On errors** (500, white screen, JS errors):
-1. `preview_console_logs` with `level: "error"`
-2. `preview_screenshot` of error state
-3. `preview_network` with `filter: "failed"`
-4. Record as **FAIL** with details
-
-#### 5c: Stop the browser server
-
-After ALL tests complete, clean up:
-
-1. `preview_stop` with the `serverId` from 5a
-2. Confirm stopped
-
-Always stop the server -- even if tests fail or get aborted. If an error interrupts testing,
-still stop the server before reporting.
+**5c: Stop browser**
+`preview_stop` with `serverId`. Always clean up, even on failure.
 
 ### Phase 6: Generate Report
 
-Save to `qa-report.md`:
+Read `references/report-template.md` and fill it in. Save to `qa-report.md`.
+Print the verdict line immediately.
 
-```markdown
-# QA Report: Essential Blocks - [Branch Name]
+## Git Safety
 
-**Date:** [today's date]
-**Site:** [site URL]
-**Tester:** Claude (automated QA)
-**Scope:** [free / pro / controls / free+pro / all]
-
-### Components Tested
-
-| Component | Path | Branch | Base | Changes |
-|-----------|------|--------|------|---------|
-| Free | essential-blocks/ | [branch] | [base] | [X files] |
-| Controls | essential-blocks/src/controls/ | [branch] | [base] | [X files] |
-| Pro | essential-blocks-pro/ | [branch] | [base] | [X files] |
-
-## Summary
-
-[2-3 sentence summary: what changed, what was tested, overall verdict]
-
-## Code Changes
-
-[If diff mode: bullet point summary from Phase 1]
-[If investigate mode: replace with:]
-
-## Investigation Target
-
-[What was investigated: the bug report, feature area, or user-described issue]
-
-## Fix Details
-
-[Summary from Phase 2, or "No fix description provided"]
-
-## Test Results
-
-| # | Test Case | Component | Method | Result | Notes |
-|---|-----------|-----------|--------|--------|-------|
-| 1 | [test item] | Free/Pro/Controls | Code/Visual | PASS/FAIL | [note] |
-
-## Concerns
-
-[Security issues, edge cases not covered, regressions. Or "No concerns identified."]
-
-## Verdict
-
-**[PASS / FAIL / PARTIAL]**
-
-[Explanation. If FAIL/PARTIAL, specify what failed and next steps.]
-```
-
-Print the verdict line immediately so the user sees the result.
-
-## Git Safety Rules
-
-**This skill is READ-ONLY for git.** It must never modify any files in the repository or push anything.
-
-**Allowed git commands (read-only):**
-- `git diff` -- reading changes
-- `git log` -- reading commit history
-- `git status` -- checking repo state
-- `git branch` / `git branch -a` -- listing branches
-- `git rev-parse` -- getting branch/commit info
-- `git submodule status` -- checking submodule state
-- `git fetch` -- downloading remote refs (does not modify working tree)
-- `git checkout` / `git switch` -- ONLY for switching branches (allowed in Issue Fetch Flow Step 5)
-- `git pull` -- ONLY for updating after branch switch (allowed in Issue Fetch Flow Step 5)
-
-**NEVER run these commands:**
-- `git add` -- do not stage any files
-- `git commit` -- do not create any commits
-- `git push` -- do not push anything to remote
-- `git merge` -- do not merge branches
-- `git rebase` -- do not rebase
-- `git reset` -- do not reset
-- `git revert` -- do not revert commits
-- `git stash` -- do not stash changes
-- `git cherry-pick` -- do not cherry-pick
-- `git tag` -- do not create tags
-- `git rm` -- do not remove tracked files
-- `git mv` -- do not move tracked files
-- `git clean` -- do not clean untracked files
-
-**NEVER modify source files:**
-- Do not edit, create, or delete any `.php`, `.js`, `.jsx`, `.tsx`, `.css`, `.scss`, `.json`,
-  `.html`, or any other source file in the plugin repos
-- Do not run any command that writes to the repo (e.g., `sed -i`, `> file`, `tee file`)
-- The only file this skill may write is the `qa-report.md` report and `/tmp/eb-issue-details.md`
-
-If you find a bug or issue during testing, **report it in the QA report** -- do not attempt to fix it.
+**Read-only.** Never `add`, `commit`, `push`, `merge`, `rebase`, `reset`, `revert`, `stash`,
+`cherry-pick`, `tag`, `rm`, `mv`, or `clean`. Never modify source files.
+Only exception: `checkout`/`pull` in Issue Fetch Flow for branch switching.
+Only files this skill may write: `qa-report.md` and `/tmp/eb-issue-details.md`.
+Found a bug? Report it in the QA report -- never fix it.
 
 ## Important Notes
 
-- **Essential Blocks only.** This skill tests Essential Blocks free, pro, and controls. Don't
-  test other plugins unless the user explicitly asks.
-- **Read-only.** This skill reads and tests code. It never modifies, commits, or pushes anything.
-- **Ask, don't guess.** If you need credentials, URLs, test data, or clarification at ANY point,
-  stop and ask. A blocked test is better than a wrong assumption.
-- If `git` fails, ask the user for the diff info another way
-- If the site is unreachable, ask if the server is running before skipping visual tests
-- Flag security vulnerabilities (SQL injection, XSS, CSRF, privilege escalation) regardless of
-  whether they're related to the current change
-- Honest verdicts: PASS = confident it works. PARTIAL = some tests unverified. FAIL = something broken.
-- Ask permission before activating/deactivating plugins, changing settings, or creating test content.
+- **Essential Blocks only.** Don't test other plugins unless asked.
+- **Read-only.** Never modifies, commits, or pushes.
+- **Ask when stuck, not upfront.** Ask for context (pages, credentials, settings) when you need it, not all at Phase 0.
+- Flag security vulnerabilities regardless of whether related to current change.
+- Honest verdicts: PASS = confident. PARTIAL = some unverified. FAIL = something broken.
+- Ask permission before activating/deactivating plugins or changing settings.
