@@ -3,30 +3,25 @@ set -e
 
 PLUGIN_DIR="${1:-.}"
 
-echo "Building Essential Blocks (Free)..."
-
-cd "$PLUGIN_DIR"
+echo "Building Essential Blocks (Free) at $PLUGIN_DIR..."
 
 # Pull submodule if not initialized
-if [ -f ".gitmodules" ]; then
+if [ -f "$PLUGIN_DIR/.gitmodules" ]; then
   echo "Initializing submodules..."
-  git submodule update --init --recursive
+  git -C "$PLUGIN_DIR" submodule update --init --recursive
 fi
 
 # Install and build controls first (dependency)
-if [ -d "src/controls" ]; then
+if [ -d "$PLUGIN_DIR/src/controls" ]; then
   echo "Building src/controls (dependency)..."
-  cd src/controls
-  pnpm install --frozen-lockfile 2>/dev/null || pnpm install
-  pnpm run build
-  cd -
+  pnpm --dir "$PLUGIN_DIR/src/controls" install --frozen-lockfile 2>/dev/null || pnpm --dir "$PLUGIN_DIR/src/controls" install
+  pnpm --dir "$PLUGIN_DIR/src/controls" run build
 fi
 
-# Install and build the free plugin
 echo "Installing dependencies..."
-pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+pnpm --dir "$PLUGIN_DIR" install --frozen-lockfile 2>/dev/null || pnpm --dir "$PLUGIN_DIR" install
 
 echo "Building free plugin..."
-pnpm run build
+pnpm --dir "$PLUGIN_DIR" run build
 
 echo "Free plugin build complete."

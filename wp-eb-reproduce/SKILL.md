@@ -10,200 +10,128 @@ description: >
 
 # Essential Blocks -- Failure Reproduction Guide Generator
 
-You take a QA report (from the `wp-eb-test` skill or any similar test report) and generate a
-detailed visual reproduction guide for every failed test case. The goal is to give developers
-a clear, screenshot-annotated document showing exactly how to trigger each failure.
+Takes a QA report and generates a detailed visual reproduction guide for every failed test case.
+Output is a screenshot-annotated document showing exactly how to trigger each failure.
+
+## Defaults
+
+On startup, check for `defaults.json` in the plugin directory:
+
+```bash
+cat defaults.json 2>/dev/null
+```
+
+Values from `defaults.json` are used unless the user overrides them:
+- `site_url`, `wp_user`, `wp_pass`, `screenshots`
 
 ## Arguments
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `report` | Yes | Path to the QA report file (e.g., `qa-report.md`) |
-| `site_url` | Yes | The WordPress site URL to reproduce on |
-| `output` | No | Output file path (defaults to `reproduce-report.md` in current directory) |
+| Argument | Required | Description | Default |
+|----------|----------|-------------|---------|
+| `report` | Yes | Path to the QA report file | -- |
+| `site_url` | Yes* | WordPress site URL | from `defaults.json` |
+| `output` | No | Output file path | `reproduce-report.md` |
+| `screenshots` | No | `yes`/`no` -- skip screenshots | `yes` or defaults.json |
 
-Example invocations:
+*Required unless set in `defaults.json`.
+
+Examples:
+- `/wp-eb-reproduce report=qa-report.md` (uses defaults for site_url)
 - `/wp-eb-reproduce report=qa-report.md site_url=https://dev.local`
-- `/wp-eb-reproduce report=./reports/qa-2024.md site_url=https://staging.site.com output=./repro.md`
+- `/wp-eb-reproduce report=./reports/qa.md output=./repro.md screenshots=no`
+
+## Credentials
+
+Same priority as main skill:
+1. **Inline in command**: `user:X pass:Y`
+2. **`defaults.json`**: `wp_user` + `wp_pass`
+3. **Ask the user**: "What are the WP admin credentials?"
+
+Never ask for credentials already provided.
+
+## Preflight Checks
+
+Before starting, verify:
+- Browser MCP: try `preview_list`. If unavailable, ask: "No browser MCP available. Skip visual reproduction or set it up?"
+- Report file exists and is readable
 
 ## Workflow
 
 ### Step 1: Parse the QA report
 
-Read the report file and extract all test cases with a **FAIL** result:
-
 ```bash
 cat <report_path>
 ```
 
-For each failed test case, extract:
-- Test case number and description
+Extract all test cases with **FAIL** result:
+- Test case number, description
 - Component (Free / Pro / Controls)
-- Method used (Code / Visual)
+- Method (Code / Visual)
 - Notes from the report
 
-If no FAIL items are found, tell the user: "No failed test cases found in the report. Nothing to reproduce."
+If no FAIL items found: "No failed test cases found in the report. Nothing to reproduce."
 
-### Step 2: Read credentials
+### Step 2: Start browser
 
-If reproduction requires wp-admin access, read credentials:
+1. `preview_start`, store `serverId`
+2. Navigate to `site_url`, confirm loaded
+3. If unreachable, ask: "Is the dev server running?"
+4. Log in to wp-admin using credentials from Credentials section
 
-```bash
-cat c.txt
-```
+### Step 3: Reproduce each failure
 
-### Step 3: Start the browser
+For each failed test case:
 
-1. Call `preview_start` to launch the Playwright browser
-2. Store the `serverId`
-3. Navigate to `site_url`, take `preview_screenshot` to confirm site is accessible
-4. Log in to wp-admin if needed (using credentials from `c.txt` or ask user)
+**3a: Plan steps** -- Based on failure description, determine:
+- Page to visit (frontend or editor)
+- Block/setting to interact with
+- Action that triggers the failure
 
-### Step 4: Reproduce each failure
+If unclear, ask: "The report says [test case] failed but I'm not sure how to reproduce it. Can you give me more context?"
 
-For EACH failed test case, follow this process:
+**3b: Execute and capture** -- For each step:
+1. Navigate with `preview_eval`
+2. If `screenshots=yes`: `preview_screenshot` BEFORE action
+3. Perform action (click, change setting, resize, etc.)
+4. If `screenshots=yes`: `preview_screenshot` AFTER action
+5. `preview_console_logs` with `level: "error"` for JS errors
+6. `preview_inspect` for CSS/element details if visual bug
+7. `preview_network` with `filter: "failed"` for network errors
 
-**4a: Plan the reproduction steps**
+Label screenshots: `[TC-#] Step N - Description (before/after)`
 
-Based on the failure description from the report, figure out the exact steps to trigger the failure:
-- Which page to visit (frontend or editor)
-- Which block or setting to interact with
-- What specific action triggers the failure
-- What the expected vs actual result is
+**3c: Document** -- For each test case:
+- Numbered reproduction steps
+- Expected vs actual result
+- Screenshots (before/after)
+- Console errors, failed requests
+- CSS/style details for visual bugs
+- Viewport info for responsive bugs
 
-If unclear, ask the user: "The report says [test case] failed but I'm not sure how to reproduce it.
-Can you give me more context?"
+### Step 4: Stop browser
 
-**4b: Execute and capture**
+`preview_stop` with `serverId`. Always clean up, even on failure.
 
-For each step in the reproduction:
+### Step 5: Generate report
 
-1. Navigate to the relevant page
-2. Take `preview_screenshot` BEFORE the action (the "starting state")
-3. Perform the action (click, change setting, navigate, resize viewport, etc.)
-4. Take `preview_screenshot` AFTER the action (showing the failure)
-5. Use `preview_console_logs` with `level: "error"` to capture any JS errors
-6. Use `preview_inspect` on the failing element to get computed styles, dimensions, text
-7. Use `preview_network` with `filter: "failed"` if the failure involves API/network errors
+Read `references/reproduce-template.md` and fill it in. Save to the output path.
 
-Label each screenshot clearly:
-- `[TC-#] Step N - Description (before/after)`
-
-**4c: Document the failure**
-
-For each test case, write:
-- Numbered reproduction steps (what to click, where to navigate)
-- What you expected to happen
-- What actually happened (the bug)
-- Screenshots showing the before/after states
-- Console errors if any
-- CSS/style details if it's a visual bug
-- Browser/viewport info if responsive issue
-
-### Step 5: Stop the browser
-
-1. Call `preview_stop` with the `serverId`
-
-### Step 6: Generate the reproduction report
-
-Save to the output file (default `reproduce-report.md`):
-
-```markdown
-# Reproduction Guide: Essential Blocks Failures
-
-**Date:** [today's date]
-**Source report:** [report path]
-**Site:** [site_url]
-**Total failures:** [count]
-
----
-
-## Failure #1: [Test case description]
-
-**Component:** [Free/Pro/Controls]
-**Original report note:** [note from QA report]
-
-### Steps to reproduce
-
-1. Go to [URL]
-2. [Action step]
-3. [Action step]
-4. ...
-
-### Expected result
-
-[What should happen]
-
-### Actual result
-
-[What actually happens -- the bug]
-
-### Screenshots
-
-#### Before
-[Screenshot reference or description of starting state]
-
-#### After
-[Screenshot reference or description showing the failure]
-
-### Technical details
-
-- **Console errors:** [errors if any, or "None"]
-- **Failed network requests:** [requests if any, or "None"]
-- **Element details:** [computed styles, dimensions if relevant]
-- **Viewport:** [width x height if responsive issue]
-
-### Severity
-
-[Critical / Major / Minor / Cosmetic]
-
-- **Critical**: Site crash, data loss, security issue
-- **Major**: Feature broken, blocks unusable
-- **Minor**: Feature works but with visual glitch or wrong behavior in edge case
-- **Cosmetic**: Styling/alignment/spacing issue only
-
----
-
-## Failure #2: [next failure...]
-
-[repeat for each failure]
-
----
-
-## Summary
-
-| # | Test Case | Component | Severity | Reproducible |
-|---|-----------|-----------|----------|--------------|
-| 1 | [description] | Free/Pro/Controls | Critical/Major/Minor/Cosmetic | Yes/No/Intermittent |
-
-## Environment
-
-- **Site URL:** [url]
-- **Browser:** Playwright (Chromium)
-- **Viewport:** [default viewport used]
-- **WordPress version:** [if visible]
-- **EB Free version:** [if visible]
-- **EB Pro version:** [if visible]
-```
-
-### Step 7: Print summary
-
-After saving the report, print a quick summary:
+### Step 6: Print summary
 
 ```
 Reproduction guide saved to [output_path]
 
 [X] failures reproduced:
-- #1 [description] → [severity] ✅ Reproduced
-- #2 [description] → [severity] ❌ Could not reproduce
-- #3 [description] → [severity] ⚠️ Intermittent
+- #1 [description] → [severity] Reproduced
+- #2 [description] → [severity] Could not reproduce
+- #3 [description] → [severity] Intermittent
 ```
 
 ## Important Notes
 
-- **Read-only.** This skill does NOT fix bugs. It only reproduces and documents them.
-- If a failure can't be reproduced, mark it as "Could not reproduce" with notes on what was tried.
-- If a failure is intermittent, note the conditions under which it appeared/didn't appear.
-- Ask the user for help if you can't figure out how to reach the failing state.
-- Always stop the browser server when done, even if reproduction fails partway through.
-- Screenshots are the most important part -- capture before AND after states for every failure.
+- **Read-only.** Does NOT fix bugs. Only reproduces and documents them.
+- If a failure can't be reproduced, mark "Could not reproduce" with notes on what was tried.
+- For intermittent failures, note conditions when it appeared/didn't.
+- Ask the user for help if you can't reach the failing state.
+- Always stop the browser server, even if reproduction fails partway through.
+- Screenshots capture before AND after states for every failure.

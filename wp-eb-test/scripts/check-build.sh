@@ -10,8 +10,15 @@ if [ ! -d "$DIR/dist" ] || [ -z "$(ls -A "$DIR/dist/" 2>/dev/null)" ]; then
   exit 0
 fi
 
-NEWEST_SRC=$(find "$DIR/src/" -name '*.js' -o -name '*.jsx' -o -name '*.tsx' -o -name '*.scss' -o -name '*.php' 2>/dev/null | xargs stat -f '%m' 2>/dev/null | sort -rn | head -1)
-NEWEST_DIST=$(find "$DIR/dist/" -type f 2>/dev/null | xargs stat -f '%m' 2>/dev/null | sort -rn | head -1)
+# Portable stat: macOS uses -f '%m', Linux uses -c '%Y'
+if stat -f '%m' /dev/null >/dev/null 2>&1; then
+  STAT_FMT="-f %m"
+else
+  STAT_FMT="-c %Y"
+fi
+
+NEWEST_SRC=$(find "$DIR/src/" \( -name '*.js' -o -name '*.jsx' -o -name '*.tsx' -o -name '*.scss' -o -name '*.php' \) 2>/dev/null -exec stat $STAT_FMT {} \; 2>/dev/null | sort -rn | head -1)
+NEWEST_DIST=$(find "$DIR/dist/" -type f 2>/dev/null -exec stat $STAT_FMT {} \; 2>/dev/null | sort -rn | head -1)
 
 if [ -z "$NEWEST_SRC" ] || [ -z "$NEWEST_DIST" ]; then
   echo "BUILD_NEEDED: could not compare timestamps"

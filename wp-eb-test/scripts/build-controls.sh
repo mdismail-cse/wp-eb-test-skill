@@ -3,15 +3,14 @@ set -e
 
 PLUGIN_DIR="${1:-.}"
 CONTROLS_PATH="${2:-src/controls}"
+FULL_PATH="$PLUGIN_DIR/$CONTROLS_PATH"
 
-echo "Building Controls submodule..."
-
-cd "$PLUGIN_DIR/$CONTROLS_PATH"
+echo "Building Controls submodule at $FULL_PATH..."
 
 echo "Installing dependencies..."
-pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+pnpm --dir "$FULL_PATH" install --frozen-lockfile 2>/dev/null || pnpm --dir "$FULL_PATH" install
 
 echo "Building controls..."
-pnpm run build
+pnpm --dir "$FULL_PATH" run build
 
 echo "Controls build complete."

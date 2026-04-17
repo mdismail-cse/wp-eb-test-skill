@@ -166,10 +166,19 @@ git -C "$COMP_PATH" log $BASE..HEAD --oneline
 
 Where `$COMP_PATH` is the path for free, controls, or pro respectively.
 
-For controls submodule pointer changes:
+For controls submodule pointer changes, extract old and new commits from the parent diff:
+
 ```bash
-git -C "$EB_FREE" diff $BASE -- src/controls
-git -C "$EB_CONTROLS" log <old_commit>..<new_commit> --oneline
+# The diff output looks like:
+# -Subproject commit <old_sha>
+# +Subproject commit <new_sha>
+DIFF=$(git -C "$EB_FREE" diff $BASE -- src/controls)
+OLD_SHA=$(echo "$DIFF" | grep -E "^-Subproject commit" | awk '{print $3}')
+NEW_SHA=$(echo "$DIFF" | grep -E "^\+Subproject commit" | awk '{print $3}')
+
+# Then see what changed between those commits
+git -C "$EB_CONTROLS" log $OLD_SHA..$NEW_SHA --oneline
+git -C "$EB_CONTROLS" diff $OLD_SHA..$NEW_SHA --stat
 ```
 
 **Map dependencies** (especially when `analysis=deep`):

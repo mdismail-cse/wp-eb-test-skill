@@ -3,20 +3,17 @@ set -e
 
 PRO_DIR="${1:-.}"
 
-echo "Building Essential Blocks Pro..."
+echo "Building Essential Blocks Pro at $PRO_DIR..."
 
-cd "$PRO_DIR"
-
-# Pull submodules if any
-if [ -f ".gitmodules" ]; then
+if [ -f "$PRO_DIR/.gitmodules" ]; then
   echo "Initializing submodules..."
-  git submodule update --init --recursive
+  git -C "$PRO_DIR" submodule update --init --recursive
 fi
 
 echo "Installing dependencies..."
-pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+pnpm --dir "$PRO_DIR" install --frozen-lockfile 2>/dev/null || pnpm --dir "$PRO_DIR" install
 
 echo "Building pro plugin..."
-pnpm run build
+pnpm --dir "$PRO_DIR" run build
 
 echo "Pro plugin build complete."
