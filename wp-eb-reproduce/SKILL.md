@@ -31,14 +31,18 @@ Values from `defaults.json` are used unless the user overrides them:
 | `report` | Yes | Path to the QA report file | -- |
 | `site_url` | Yes* | WordPress site URL | from `defaults.json` |
 | `output` | No | Output file path | `reproduce-report.md` |
-| `screenshots` | No | `yes`/`no` -- skip screenshots | `yes` or defaults.json |
+| `screenshots` | No | `yes`/`no` -- take screenshots (opt-in) | `no` |
+| `-c` / `cloudinary` | No | Upload screenshots to Cloudinary | `no` |
 
 *Required unless set in `defaults.json`.
 
+Note: Reproduction reports benefit from screenshots more than normal QA reports, so enabling
+`screenshots=yes` is often useful here. But still respect the opt-in default.
+
 Examples:
-- `/wp-eb-reproduce report=qa-report.md` (uses defaults for site_url)
-- `/wp-eb-reproduce report=qa-report.md site_url=https://dev.local`
-- `/wp-eb-reproduce report=./reports/qa.md output=./repro.md screenshots=no`
+- `/wp-eb-reproduce report=qa-report.md` (NO screenshots, text-only reproduction)
+- `/wp-eb-reproduce report=qa-report.md screenshots=yes` (take local screenshots)
+- `/wp-eb-reproduce report=qa-report.md screenshots=yes -c` (upload to Cloudinary)
 
 ## Credentials
 
@@ -91,14 +95,20 @@ If unclear, ask: "The report says [test case] failed but I'm not sure how to rep
 
 **3b: Execute and capture** -- For each step:
 1. Navigate with `preview_eval`
-2. If `screenshots=yes`: `preview_screenshot` BEFORE action
+2. `preview_snapshot` BEFORE action (captures text/structure, no image)
 3. Perform action (click, change setting, resize, etc.)
-4. If `screenshots=yes`: `preview_screenshot` AFTER action
+4. `preview_snapshot` AFTER action
 5. `preview_console_logs` with `level: "error"` for JS errors
 6. `preview_inspect` for CSS/element details if visual bug
 7. `preview_network` with `filter: "failed"` for network errors
 
-Label screenshots: `[TC-#] Step N - Description (before/after)`
+**Screenshots are OPT-IN.** Only if `screenshots=yes`:
+- Take `preview_screenshot` before and after the action
+- If `-c` flag set, upload each screenshot to Cloudinary:
+  ```bash
+  URL=$(bash "$SKILL_DIR/scripts/upload-cloudinary.sh" "<path>" "repro-tc-<N>")
+  ```
+- Label: `[TC-#] Step N - Description (before/after)` with Cloudinary URL or local path
 
 **3c: Document** -- For each test case:
 - Numbered reproduction steps

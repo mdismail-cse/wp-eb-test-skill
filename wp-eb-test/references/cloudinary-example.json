@@ -1,0 +1,6 @@
+{
+  "cloud_name": "your-cloud-name",
+  "upload_preset": "your-unsigned-preset",
+  "api_key": "optional-for-signed-uploads",
+  "api_secret": "optional-for-signed-uploads"
+}

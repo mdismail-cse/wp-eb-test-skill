@@ -43,7 +43,7 @@ Example `defaults.json`:
   "test_areas": ["editor", "fse", "frontend"],
   "analysis": "deep",
   "check_dependents": true,
-  "screenshots": true
+  "screenshots": "no"
 }
 ```
 
@@ -62,17 +62,53 @@ If `defaults.json` doesn't exist, ask for required values as needed.
 | `branch` | No | Branch to diff against | `main` / `master` |
 | `build` | No | `yes`, `no`, `auto` | `auto` or defaults.json |
 | `mode` | No | `diff` or `investigate` | `diff` |
-| `screenshots` | No | `yes` / `no` -- skip taking screenshots | `yes` or defaults.json |
+| `screenshots` | No | `yes` / `no` -- take screenshots (opt-in) | `no` |
+| `-c` / `cloudinary` | No | Upload screenshots to Cloudinary and share URLs | `no` |
 | `test_areas` | No | `editor`, `fse`, `frontend`, or `all` | `all` or defaults.json |
-| `analysis` | No | `normal` or `deep` -- deep traces dependency chains | `normal` or defaults.json |
+| `analysis` | No | `normal` or `deep` -- deep traces dependency chains, consults wp-eb-dev | `normal` or defaults.json |
 
 *Required unless set in `defaults.json`.
 
 Examples:
-- `/wp-eb-test` (uses all defaults)
+- `/wp-eb-test` (uses all defaults, NO screenshots)
 - `/wp-eb-test focus="slider"` (defaults + focus)
+- `/wp-eb-test screenshots=yes` (take screenshots, save locally)
+- `/wp-eb-test screenshots=yes -c` (take screenshots, upload to Cloudinary, share URLs)
 - `/wp-eb-test issue_url=https://projects.startise.com//fbs-80634`
 - `/wp-eb-test scope=free build=no mode=investigate`
+- `/wp-eb-test analysis=deep` (consults wp-eb-dev for deeper edge cases)
+
+## Screenshots & Cloudinary
+
+**Screenshots are OFF by default.** Never take them unless explicitly requested.
+
+The skill uses `preview_snapshot` + `preview_inspect` + `preview_console_logs` for verification --
+these capture HTML/CSS/console state without images and are sufficient for most tests.
+
+Take screenshots ONLY when:
+- User sets `screenshots=yes` in the command
+- `defaults.json` has `"screenshots": "yes"` AND user didn't override with `screenshots=no`
+- User explicitly says "take screenshot" during the session
+
+**Cloudinary upload (when `-c` flag is present):**
+
+When user adds `-c` along with `screenshots=yes`, upload each screenshot to Cloudinary
+and use the returned URL in the report instead of a local path:
+
+```bash
+URL=$(bash "$SKILL_DIR/scripts/upload-cloudinary.sh" "<screenshot_path>" "wp-eb-test-<test_id>")
+```
+
+Requires `cloudinary.json` in plugin dir or `~/.cloudinary.json`:
+```json
+{
+  "cloud_name": "your-cloud-name",
+  "upload_preset": "your-unsigned-preset"
+}
+```
+See `references/cloudinary-example.json`.
+
+If upload fails, fall back to local path and note "Cloudinary upload failed" in the report.
 
 ## Credentials
 
@@ -209,6 +245,21 @@ Cross-reference with code changes. Flag discrepancies.
 Generate focused test cases based on actual code changes. Be precise, not exhaustive.
 Only include tests relevant to THIS change. Read the code to know exact values and states.
 
+**When `analysis=deep`, consult the `wp-eb-dev` skill for deeper insights:**
+
+Before finalizing the checklist, invoke the `wp-eb-dev` skill to get senior-dev-level analysis:
+- "Given these code changes [summary], what EB-specific chain effects or future risks should I test?"
+- "What non-obvious edge cases does this change introduce based on EB's architecture?"
+- "Which hooks/filters/blocks in EB free and pro depend on the changed code?"
+
+Use wp-eb-dev's findings to add targeted test cases covering:
+- **Chain effects**: Code paths that trigger when the changed code executes
+- **Deprecated flows**: Old APIs that might still be in use
+- **Release alignment**: Free/pro/controls version compatibility
+- **Hook consumers**: Which plugins/themes subscribe to affected hooks
+- **Cross-repo impact**: How the change ripples through free ↔ pro ↔ controls
+- **Migration paths**: Old block attribute formats still in user content
+
 Pick applicable categories. Skip what doesn't apply.
 
 **Editor tests** (if block editor code changed):
@@ -277,12 +328,13 @@ When you need a specific page/block, ask at that moment: "Which page has [block]
 
 For each test:
 1. Navigate with `preview_eval`
-2. If `screenshots=yes`: `preview_screenshot`
-3. `preview_inspect` for CSS, `preview_snapshot` for text/structure
-4. `preview_console_logs` for JS errors
+2. `preview_inspect` for CSS, `preview_snapshot` for text/structure (primary verification)
+3. `preview_console_logs` for JS errors
+4. **ONLY if `screenshots=yes`**: `preview_screenshot`, then upload to Cloudinary if `-c` flag set
 5. Record: **PASS (visual)**, **FAIL (visual)**, or **BLOCKED**
 
-On errors: check console, network, screenshot error state. Record as FAIL.
+On errors: check console, network logs. Screenshot the error state ONLY if `screenshots=yes`.
+Record as FAIL with details from snapshot/inspect/console output.
 
 **5c: Stop browser**
 `preview_stop` with `serverId`. Always clean up, even on failure.
