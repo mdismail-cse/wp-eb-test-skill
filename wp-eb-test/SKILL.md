@@ -62,28 +62,32 @@ If `defaults.json` doesn't exist, ask for required values as needed.
 | `branch` | No | Branch to diff against | `main` / `master` |
 | `build` | No | `yes`, `no`, `auto` | `auto` or defaults.json |
 | `mode` | No | `diff` or `investigate` | `diff` |
-| `screenshots` | No | `yes` / `no` -- take screenshots (opt-in) | `no` |
+| `screenshots` | No | `yes` / `no` -- take image screenshots (opt-in) | `no` |
 | `-c` / `cloudinary` | No | Upload screenshots to Cloudinary and share URLs | `no` |
+| `visual` | No | `yes` / `no` -- run visual browser tests. **Default YES** | `yes` |
 | `test_areas` | No | `editor`, `fse`, `frontend`, or `all` | `all` or defaults.json |
 | `analysis` | No | `normal` or `deep` -- deep traces dependency chains, consults wp-eb-dev | `normal` or defaults.json |
 
 *Required unless set in `defaults.json`.
 
 Examples:
-- `/wp-eb-test` (uses all defaults, NO screenshots)
+- `/wp-eb-test` (all defaults: visual ON, screenshots OFF, diff vs main/master)
 - `/wp-eb-test focus="slider"` (defaults + focus)
-- `/wp-eb-test screenshots=yes` (take screenshots, save locally)
-- `/wp-eb-test screenshots=yes -c` (take screenshots, upload to Cloudinary, share URLs)
+- `/wp-eb-test visual=no` (SKIP visual tests, code-only)
+- `/wp-eb-test screenshots=yes` (visual tests + local screenshots)
+- `/wp-eb-test screenshots=yes -c` (visual tests + Cloudinary screenshot URLs)
 - `/wp-eb-test issue_url=https://projects.startise.com//fbs-80634`
 - `/wp-eb-test scope=free build=no mode=investigate`
 - `/wp-eb-test analysis=deep` (consults wp-eb-dev for deeper edge cases)
 
-## Screenshots & Cloudinary
+## Visual Testing vs Screenshots
 
-**Screenshots are OFF by default.** Never take them unless explicitly requested.
+**Visual testing is MANDATORY by default.** Always open the browser, navigate to pages, and run
+test cases in the editor/FSE/frontend. Only skip visual tests if user sets `visual=no`.
 
-The skill uses `preview_snapshot` + `preview_inspect` + `preview_console_logs` for verification --
-these capture HTML/CSS/console state without images and are sufficient for most tests.
+**Screenshots (image captures) are separate and OFF by default.** Visual testing works without
+screenshots by using `preview_snapshot` + `preview_inspect` + `preview_console_logs` which capture
+HTML/CSS/console state as text.
 
 Take screenshots ONLY when:
 - User sets `screenshots=yes` in the command
@@ -192,6 +196,10 @@ If on main/master and `mode` not set, ask: investigate mode or specify a branch?
 
 **Skip if `mode=investigate`.**
 
+**ALWAYS diff against main/master.** This is the baseline. Never diff against a feature branch
+or commit unless the user explicitly sets `branch=...`. The goal: what did THIS branch change
+compared to the stable release line.
+
 For each component in scope, run:
 ```bash
 BASE=$(git -C "$COMP_PATH" rev-parse --verify origin/main 2>/dev/null && echo "origin/main" || echo "origin/master")
@@ -297,6 +305,24 @@ Pick applicable categories. Skip what doesn't apply.
 **Security** (if code handles user input/AJAX/DB):
 - Sanitization, nonce, capability checks, `$wpdb->prepare()`
 
+**User perspective tests** (ALWAYS include at least 3-5):
+
+Think like a real end user, not a developer. Ask: how will a content creator, site admin, or
+visitor actually encounter this change?
+
+- **Content creator (admin/editor)**: A blogger building a page with this block -- can they
+  configure it without reading docs? Is the control labeling clear?
+- **Page visitor**: Does the block load fast? Does it work on slow connections? Does clicking/
+  hovering feel responsive? Any unexpected UI shifts?
+- **Mobile user**: Does the block feel natural with thumb navigation? Are touch targets large
+  enough? Does text wrap correctly?
+- **Accessibility user**: Can a keyboard-only user tab through? Does a screen reader announce
+  changes correctly? Sufficient color contrast?
+- **Returning user**: If they had this block configured before the change, does it still look
+  and work the same? Or does something unexpected happen?
+- **Non-tech user setting up the plugin**: Does it work out of the box with no configuration?
+- **Power user**: Can they customize deeply? Do advanced settings behave as expected?
+
 Format: `[#] [Free/Pro/Controls] Description → Expected result`
 Keep to **10-25 items**.
 
@@ -308,6 +334,10 @@ For each test: **PASS (code)**, **NEEDS VISUAL**, or **CONCERN** (explain why).
 Check: sanitization, nonces, capabilities, escaping, prepared queries, block validation.
 
 ### Phase 5: Visual Verification
+
+**ALWAYS run this phase unless `visual=no`.** Visual testing is mandatory.
+
+If `visual=no`: skip Phase 5 entirely, mark all NEEDS VISUAL items as "SKIPPED (user opted out)".
 
 Test items marked "NEEDS VISUAL" (or all items in investigate mode).
 
@@ -343,6 +373,17 @@ Record as FAIL with details from snapshot/inspect/console output.
 
 Read `references/report-template.md` and fill it in. Save to `qa-report.md`.
 Print the verdict line immediately.
+
+**Report style: caveman.** Few words. Short sentences. No fluff. Keep originality (all sections,
+all info) but strip verbose prose. Example:
+
+- ❌ "The block renders correctly in the editor with no console errors and all settings persist."
+- ✅ "Block render editor. No errors. Settings persist."
+
+- ❌ "This test case verifies that the block still functions correctly after deactivating the pro plugin."
+- ✅ "Pro off. Block still work."
+
+Keep file paths, error messages, and technical details full. Only prose gets trimmed.
 
 ## Git Safety
 

@@ -1,43 +1,63 @@
-# QA Report: Essential Blocks - [Branch Name]
+# QA Report: Essential Blocks — [Branch]
 
-**Date:** [today's date]
-**Site:** [site URL]
-**Tester:** Claude (automated QA)
-**Scope:** [free / pro / controls / free+pro / all]
+**Date:** [today]
+**Site:** [url]
+**Scope:** [free/pro/controls/all]
+**Base:** main/master
 
-### Components Tested
+## Tested
 
-| Component | Path | Branch | Base | Changes |
-|-----------|------|--------|------|---------|
-| Free | essential-blocks/ | [branch] | [base] | [X files] |
-| Controls | essential-blocks/src/controls/ | [branch] | [base] | [X files] |
-| Pro | essential-blocks-pro/ | [branch] | [base] | [X files] |
-
-## Summary
-
-[2-3 sentence summary: what changed, what was tested, overall verdict]
-
-## Code Changes
-
-[If diff mode: bullet point summary from Phase 1]
-[If investigate mode: replace this section with "Investigation Target" and describe what was investigated]
-
-## Fix Details
-
-[Summary from Phase 2, or "No fix description provided"]
-
-## Test Results
-
-| # | Test Case | Component | Method | Result | Notes |
-|---|-----------|-----------|--------|--------|-------|
-| 1 | [test item] | Free/Pro/Controls | Code/Visual | PASS/FAIL | [note] |
-
-## Concerns
-
-[Security issues, edge cases not covered, regressions. Or "No concerns identified."]
+| Component | Branch | Base | Files Changed |
+|-----------|--------|------|---------------|
+| Free | [b] | main | [N] |
+| Controls | [b] | main | [N] |
+| Pro | [b] | main | [N] |
 
 ## Verdict
 
 **[PASS / FAIL / PARTIAL]**
 
-[Explanation. If FAIL/PARTIAL, specify what failed and next steps.]
+[One line. What work. What not work.]
+
+## Change Summary
+
+- [file path] → [what change]
+- [file path] → [what change]
+
+## Fix Target
+
+[From issue/fix_file. One line. What bug fix try solve.]
+
+## Test Results
+
+| # | Test | Where | How | Result |
+|---|------|-------|-----|--------|
+| 1 | [short desc] | Free/Pro/Controls | Code/Visual | PASS/FAIL |
+| 2 | [short desc] | ... | ... | ... |
+
+## Fail Detail
+
+**#[N] [test name]**
+- Expect: [short]
+- Got: [short]
+- Why bad: [short]
+
+(Repeat per fail. Skip section if no fails.)
+
+## User Check
+
+| Perspective | Verdict | Note |
+|-------------|---------|------|
+| Content creator | PASS/FAIL | [one phrase] |
+| Visitor | PASS/FAIL | [one phrase] |
+| Mobile | PASS/FAIL | [one phrase] |
+| A11y | PASS/FAIL | [one phrase] |
+
+## Concerns
+
+- [Security/regression/edge — one line each]
+- Or: None.
+
+## Next Steps
+
+[If FAIL/PARTIAL: one bullet per action needed. Else: "Ship it."]
