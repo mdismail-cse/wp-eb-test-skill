@@ -250,8 +250,30 @@ Cross-reference with code changes. Flag discrepancies.
 
 ### Phase 3: Build Test Checklist
 
-Generate focused test cases based on actual code changes. Be precise, not exhaustive.
-Only include tests relevant to THIS change. Read the code to know exact values and states.
+**Test cases MUST come from the actual code diff in Phase 1. Not from generic QA templates.**
+
+Process:
+1. Take the diff summary from Phase 1 (list of changed files, hunks, functions)
+2. For EACH changed file/function, ask: "What does THIS specific change do? What can break?"
+3. Write test cases that directly target those changes
+4. THEN layer applicable categories (editor/frontend/edge/security/etc.) on top
+
+The categories below are **filters**, not sources. A test case exists because the code changed --
+the category just tells you what angle to check it from.
+
+**Example of right vs wrong:**
+
+Diff shows: `src/blocks/slider/edit.js` — added `autoplay` attribute to slider.
+
+- ❌ Wrong (generic): "Test that slider works in editor"
+- ✅ Right (from diff): "TC1: Slider `autoplay` attribute defaults to false. Editor control toggles it. Value persists after save."
+- ✅ Right (from diff): "TC2: When `autoplay=true`, slider advances automatically. When false, stays still."
+- ✅ Right (from diff): "TC3: `autoplay` works with existing `speed` and `transition` attributes — no conflict."
+
+Skip entire categories if nothing in the diff touches them. A CSS-only change doesn't need
+security tests. A PHP backend change may not need responsive tests.
+
+Be precise, not exhaustive. Read the code to know exact values and states.
 
 **When `analysis=deep`, consult the `wp-eb-dev` skill for deeper insights:**
 
