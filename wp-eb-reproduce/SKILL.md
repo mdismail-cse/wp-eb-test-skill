@@ -33,6 +33,7 @@ Values from `defaults.json` are used unless the user overrides them:
 | `output` | No | Output file path | `reproduce-report.md` |
 | `screenshots` | No | `yes`/`no` -- take screenshots (opt-in) | `no` |
 | `-c` / `cloudinary` | No | Upload screenshots to Cloudinary | `no` |
+| `visual` | No | `yes`/`no` -- run visual browser reproduction. **Default YES** | `yes` |
 
 *Required unless set in `defaults.json`.
 
@@ -125,6 +126,12 @@ If unclear, ask: "The report says [test case] failed but I'm not sure how to rep
 ### Step 5: Generate report
 
 Read `references/reproduce-template.md` and fill it in. Save to the output path.
+
+**Report style: caveman.** Few words. Short sentences. No fluff. Keep all sections and technical
+details (file paths, errors, URLs full) but strip verbose prose. Example:
+
+- ❌ "When clicking the autoplay toggle, the slider does not begin auto-advancing as expected."
+- ✅ "Click autoplay toggle. Slider not advance. Bug."
 
 ### Step 6: Print summary
 

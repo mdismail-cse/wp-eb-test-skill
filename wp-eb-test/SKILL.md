@@ -172,9 +172,18 @@ If exit code 0 → build needed. Ask: "Build artifacts look stale. Should I buil
 Before testing, verify prerequisites. Ask for anything missing.
 
 **Tool checks:**
-- Browser MCP: try `preview_list`. If unavailable, ask: "No browser MCP available. Skip visual tests or set it up?"
+- Browser MCP fallback chain (try in order, use first available):
+  1. **Claude Preview MCP** -- `preview_list` (preferred)
+  2. **Playwright MCP** -- `mcp__playwright__browser_snapshot` (fallback)
+  3. **Claude in Chrome** -- `mcp__Claude_in_Chrome__navigate` (last resort)
+  4. None available → ask: "No browser MCP available. Skip visual tests (`visual=no`) or set one up?"
 - Git: `git -C <path> rev-parse --is-inside-work-tree`. If fails, ask for correct path.
 - pnpm: `which pnpm`. If missing, ask: "Skip building or install pnpm?"
+
+Note: Throughout this skill, `preview_*` calls refer to Claude Preview. If using Playwright,
+substitute `mcp__playwright__browser_*` (e.g., `browser_navigate`, `browser_snapshot`,
+`browser_take_screenshot`, `browser_console_messages`). If using Claude in Chrome,
+substitute `mcp__Claude_in_Chrome__*` equivalents.
 
 **Don't ask for everything upfront.** Only ask what's clearly missing right now.
 Ask context-specific questions later when you actually need them (e.g., "which page has this block?"
@@ -352,7 +361,15 @@ Keep to **10-25 items**.
 
 **Skip if `mode=investigate`.**
 
-For each test: **PASS (code)**, **NEEDS VISUAL**, or **CONCERN** (explain why).
+For each test, classify:
+- **PASS (code)** -- Code clearly handles this correctly. Still verify in Phase 5 IF the test
+  involves UI/runtime behavior (most tests do). Skip Phase 5 only for pure code-logic tests
+  (e.g., "uses sanitize_text_field" -- visible from code, no UI to check).
+- **NEEDS VISUAL** -- Cannot confirm from code alone. MUST run in Phase 5.
+- **CONCERN** -- Code might be wrong. Explain why. MUST verify in Phase 5.
+
+Default: when in doubt, mark **NEEDS VISUAL**. Visual confirmation > code-only assumption.
+
 Check: sanitization, nonces, capabilities, escaping, prepared queries, block validation.
 
 ### Phase 5: Visual Verification
@@ -368,12 +385,23 @@ Test items marked "NEEDS VISUAL" (or all items in investigate mode).
 2. Navigate to site URL, confirm loaded
 3. If unreachable, ask: "Is the dev server running?"
 
-**5b: Test**
+**5b: Test (follow this order)**
 
-Test in the areas specified by `test_areas`:
-- **editor**: Open Gutenberg post editor, test block
-- **fse**: Open Full Site Editor, test block in templates
-- **frontend**: Save the page, view frontend, verify output
+Run tests in this EXACT order per page being tested:
+
+1. **Editor first** -- Open Gutenberg post editor (`/wp-admin/post-new.php` or existing post)
+   - Insert/locate the block, test all changed controls and attributes
+   - Verify no console errors
+2. **Save** -- Click Update/Publish. Verify save succeeds with no validation errors
+3. **Frontend after save** -- Visit the saved page on the frontend
+   - Verify rendered output matches editor preview
+   - Test interactive JS, CSS, hover/click behaviors
+4. **FSE (if `test_areas` includes `fse`)** -- Open `/wp-admin/site-editor.php`
+   - Test block in template, template parts, patterns
+   - Verify global styles don't conflict
+
+This ordering catches save/serialization bugs (block validation errors, attribute drift) AND
+rendering bugs in one pass. Skip steps if `test_areas` excludes them.
 
 Log in to wp-admin using credentials (from Credentials section).
 When you need a specific page/block, ask at that moment: "Which page has [block]?"

@@ -49,7 +49,17 @@ if [ -n "$UPLOAD_PRESET" ]; then
 # Signed upload (fallback, needs API key + secret)
 elif [ -n "$API_KEY" ] && [ -n "$API_SECRET" ]; then
   TIMESTAMP=$(date +%s)
-  SIGNATURE=$(echo -n "tags=$TAG&timestamp=$TIMESTAMP$API_SECRET" | shasum -a 1 | awk '{print $1}')
+  # Portable SHA-1: macOS has shasum, Linux usually has sha1sum
+  if command -v sha1sum >/dev/null 2>&1; then
+    SIGNATURE=$(echo -n "tags=$TAG&timestamp=$TIMESTAMP$API_SECRET" | sha1sum | awk '{print $1}')
+  elif command -v shasum >/dev/null 2>&1; then
+    SIGNATURE=$(echo -n "tags=$TAG&timestamp=$TIMESTAMP$API_SECRET" | shasum -a 1 | awk '{print $1}')
+  elif command -v openssl >/dev/null 2>&1; then
+    SIGNATURE=$(echo -n "tags=$TAG&timestamp=$TIMESTAMP$API_SECRET" | openssl dgst -sha1 | awk '{print $NF}')
+  else
+    echo "ERROR: No SHA-1 tool available (need sha1sum, shasum, or openssl)" >&2
+    exit 5
+  fi
   RESPONSE=$(curl -s -X POST "$UPLOAD_URL" \
     -F "file=@$IMAGE_PATH" \
     -F "api_key=$API_KEY" \
