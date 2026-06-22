@@ -19,6 +19,9 @@
 
 [One line. What work. What not work.]
 
+**Coverage: [X] of [Y] tests confirmed by running. [Z] code-only (not executed).**
+[If Z > 0, PASS cannot be claimed for those — they are PARTIAL at best.]
+
 ## Change Summary
 
 - [file path] → [what change]
@@ -34,6 +37,9 @@
 |---|------|-------|-----|--------|
 | 1 | [short desc] | Free/Pro/Controls | Code/Visual | PASS/FAIL |
 | 2 | [short desc] | ... | ... | ... |
+
+A PASS for anything a user sees or interacts with MUST have How=Visual. How=Code is allowed only
+for pure non-runtime facts (e.g. sanitization present); never mark a runtime test PASS from code alone.
 
 ## Fail Detail
 

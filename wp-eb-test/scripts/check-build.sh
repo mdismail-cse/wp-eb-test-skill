@@ -25,8 +25,11 @@ if [ -z "$NEWEST_SRC" ] || [ -z "$NEWEST_DIST" ]; then
   exit 0
 fi
 
-if [ "$NEWEST_SRC" -gt "$NEWEST_DIST" ]; then
-  echo "BUILD_NEEDED: source is newer than dist"
+# Use >= (not >): `git checkout` stamps src and dist with the SAME mtime, so a strict `>`
+# reports FRESH right after a branch switch and the OLD committed dist gets tested. Treating
+# equal timestamps as "needs build" is the safe default -- a redundant build beats stale code.
+if [ "$NEWEST_SRC" -ge "$NEWEST_DIST" ]; then
+  echo "BUILD_NEEDED: source newer than or same age as dist (stale, or just-checked-out branch)"
   exit 0
 fi
 

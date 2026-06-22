@@ -13,6 +13,16 @@ description: >
 Takes a QA report and generates a detailed visual reproduction guide for every failed test case.
 Output is a screenshot-annotated document showing exactly how to trigger each failure.
 
+## Setup: Resolve Paths (do this FIRST)
+
+`$SKILL_DIR` is the folder containing THIS SKILL.md (where `scripts/` lives — this skill ships
+its own `scripts/upload-cloudinary.sh`). Set it before any script call and verify it exists:
+
+```bash
+SKILL_DIR="<absolute path to this skill's folder>"   # e.g. ~/.claude/skills/wp-eb-reproduce
+[ -f "$SKILL_DIR/scripts/upload-cloudinary.sh" ] || echo "MISSING upload script — ask user for SKILL_DIR"
+```
+
 ## Defaults
 
 On startup, check for `defaults.json` in the plugin directory:
@@ -105,7 +115,9 @@ If unclear, ask: "The report says [test case] failed but I'm not sure how to rep
 
 **Screenshots are OPT-IN.** Only if `screenshots=yes`:
 - Take `preview_screenshot` before and after the action
-- If `-c` flag set, upload each screenshot to Cloudinary:
+- If `-c` flag set, upload each screenshot to Cloudinary. ⚠️ Unsigned upload = a **public** URL
+  (may be cached/indexed even after deletion) of a logged-in admin/staging site. Confirm with the
+  user before the first upload; if they decline, keep screenshots local. Then:
   ```bash
   URL=$(bash "$SKILL_DIR/scripts/upload-cloudinary.sh" "<path>" "repro-tc-<N>")
   ```

@@ -24,6 +24,30 @@ Controls is a submodule inside free. Changes to controls affect every block that
 
 **Always use `git -C <path>` instead of `cd <path> && git ...` to avoid permission prompts.**
 
+## Setup: Resolve Paths (do this FIRST, before any script or grep)
+
+Several commands below use shell variables. They are NOT auto-set — establish them at the start
+of every run and **verify each path exists before using it**. An unset/wrong path makes greps and
+builds silently return nothing, which under-tests while looking complete.
+
+```bash
+# SKILL_DIR = the folder that contains THIS SKILL.md (where scripts/ lives).
+# Set it to the absolute path of this skill, e.g. ~/.claude/skills/wp-eb-test
+SKILL_DIR="<absolute path to this skill's folder>"
+
+# Component paths — derive from the actual local layout (ask the user if unsure):
+EB_FREE="<path to essential-blocks>"        # free plugin repo
+EB_CONTROLS="$EB_FREE/src/controls"         # controls submodule, lives inside free
+EB_PRO="<path to essential-blocks-pro>"     # pro plugin repo
+
+# Verify before proceeding. If any required path is missing, STOP and ask — never guess.
+for P in "$SKILL_DIR/scripts" "$EB_FREE"; do
+  [ -e "$P" ] || echo "MISSING: $P — ask the user for the correct location before continuing"
+done
+```
+
+`$COMP_PATH` in Phase 1 is just whichever of `$EB_FREE` / `$EB_CONTROLS` / `$EB_PRO` is in scope.
+
 ## Defaults
 
 On startup, check for `defaults.json` in the plugin directory:
@@ -96,8 +120,14 @@ Take screenshots ONLY when:
 
 **Cloudinary upload (when `-c` flag is present):**
 
-When user adds `-c` along with `screenshots=yes`, upload each screenshot to Cloudinary
-and use the returned URL in the report instead of a local path:
+⚠️ **Privacy warning — confirm before the first upload.** An unsigned Cloudinary upload produces a
+**publicly accessible URL** that may be cached/indexed even after deletion. These screenshots are
+of a logged-in wp-admin / staging site and can contain client content, drafts, or site internals.
+Before uploading the first screenshot, ask: "Screenshots will be uploaded to a public Cloudinary
+URL — OK to proceed, or keep them local?" If the user declines, fall back to local paths.
+
+When user adds `-c` along with `screenshots=yes` (and confirms), upload each screenshot to
+Cloudinary and use the returned URL in the report instead of a local path:
 
 ```bash
 URL=$(bash "$SKILL_DIR/scripts/upload-cloudinary.sh" "<screenshot_path>" "wp-eb-test-<test_id>")
@@ -139,13 +169,24 @@ Never ask for credentials already provided. Never ask twice.
    - Title, description, reproduction steps, branch names, priority, labels
 5. Save to `/tmp/eb-issue-details.md` (use `references/issue-template.md` format)
 6. Stop browser (`preview_stop`)
-7. Switch branches for each component found in issue:
+7. Switch branches for each component found in issue. **Before touching any repo, protect the
+   user's working state:**
    ```bash
+   # a) Refuse to switch if the worktree is dirty — never risk the user's uncommitted work.
+   if [ -n "$(git -C <component_path> status --porcelain)" ]; then
+     echo "DIRTY: <component_path> has uncommitted changes — ask the user before switching branches"
+     # STOP for this component. Do not checkout. Ask the user how to proceed.
+   fi
+
+   # b) Record the starting branch so it can be restored at the end (see Phase 6 / Git Safety).
+   ORIG_BRANCH_<comp>=$(git -C <component_path> rev-parse --abbrev-ref HEAD)
+
+   # c) Now switch
    git -C <component_path> fetch origin
    git -C <component_path> checkout <branch>
    git -C <component_path> pull origin <branch>
    ```
-   Auto-set `scope` based on which branches found.
+   Auto-set `scope` based on which branches found. Remember every `ORIG_BRANCH_*` you recorded.
 8. Build all in-scope components (controls → free → pro)
 9. Continue to Phase 0
 
@@ -211,13 +252,26 @@ compared to the stable release line.
 
 For each component in scope, run:
 ```bash
-BASE=$(git -C "$COMP_PATH" rev-parse --verify origin/main 2>/dev/null && echo "origin/main" || echo "origin/master")
+# 1) Refresh the baseline FIRST. A stale origin/main makes the diff — and every test case
+#    derived from it — wrong. Fetch is read-only.
+git -C "$COMP_PATH" fetch origin --quiet
+
+# 2) Pick baseline: main, else master. rev-parse MUST be quiet/redirected, otherwise its SHA
+#    leaks into $BASE and `git diff $BASE` silently diffs the wrong thing.
+BASE=origin/main
+git -C "$COMP_PATH" rev-parse --verify -q origin/main >/dev/null 2>&1 || BASE=origin/master
+
 git -C "$COMP_PATH" diff $BASE --stat
 git -C "$COMP_PATH" diff $BASE -- '*.php' '*.js' '*.jsx' '*.tsx' '*.css' '*.scss' '*.json'
 git -C "$COMP_PATH" log $BASE..HEAD --oneline
+
+# 3) Record the exact baseline for the report so a wrong base is visible, not silent.
+echo "Baseline: $BASE @ $(git -C "$COMP_PATH" rev-parse --short $BASE)"
 ```
 
-Where `$COMP_PATH` is the path for free, controls, or pro respectively.
+Where `$COMP_PATH` is the path for free, controls, or pro respectively. Put the `Baseline:` line
+in the report's **Base** column. If the diff looks suspiciously large, the branch was likely cut
+from `develop`/`release/*`, not main — tell the user instead of generating noise test cases.
 
 For controls submodule pointer changes, extract old and new commits from the parent diff:
 
@@ -357,18 +411,22 @@ visitor actually encounter this change?
 Format: `[#] [Free/Pro/Controls] Description → Expected result`
 Keep to **10-25 items**.
 
-### Phase 4: Code Analysis Verdict
+### Phase 4: Code Analysis (preliminary — NOT a final pass)
 
 **Skip if `mode=investigate`.**
 
-For each test, classify:
-- **PASS (code)** -- Code clearly handles this correctly. Still verify in Phase 5 IF the test
-  involves UI/runtime behavior (most tests do). Skip Phase 5 only for pure code-logic tests
-  (e.g., "uses sanitize_text_field" -- visible from code, no UI to check).
-- **NEEDS VISUAL** -- Cannot confirm from code alone. MUST run in Phase 5.
-- **CONCERN** -- Code might be wrong. Explain why. MUST verify in Phase 5.
+Reading code produces a *prediction*, never a green PASS. Anything a user can see or interact
+with MUST be confirmed in Phase 5 before it can be marked PASS. Classify each test:
 
-Default: when in doubt, mark **NEEDS VISUAL**. Visual confirmation > code-only assumption.
+- **LIKELY OK (code)** -- code looks correct, but this is a hypothesis. It REQUIRES Phase 5 to
+  become a PASS. Never report it as PASS on its own.
+- **NEEDS VISUAL** -- cannot confirm from code. MUST run in Phase 5.
+- **CONCERN** -- code might be wrong. Explain why. MUST verify in Phase 5.
+- **CODE-VERIFIED** -- ONLY for pure non-runtime facts visible directly in source with no UI
+  behavior (e.g. "calls `sanitize_text_field`", "query uses `$wpdb->prepare`"). May stand without
+  Phase 5, but its result method is `Code` in the report so readers know it was never executed.
+
+Default: when in doubt, **NEEDS VISUAL**. A code-only guess about runtime/UI behavior is never a PASS.
 
 Check: sanitization, nonces, capabilities, escaping, prepared queries, block validation.
 
@@ -419,9 +477,16 @@ Record as FAIL with details from snapshot/inspect/console output.
 **5c: Stop browser**
 `preview_stop` with `serverId`. Always clean up, even on failure.
 
-### Phase 6: Generate Report
+### Phase 6: Generate Report & Clean Up
 
-Read `references/report-template.md` and fill it in. Save to `qa-report.md`.
+**Cleanup first (always, even if testing failed partway):**
+- **Restore branches**: for every component you switched, `git -C <path> checkout "$ORIG_BRANCH_<comp>"`.
+- **Restore site state**: if you deactivated/activated any plugin or changed a setting during
+  testing, put it back. Note any test posts/pages you created so the user can delete them
+  (list their IDs/URLs in the report — don't leave silent junk on the site).
+- **Stop the browser**: `preview_stop` if still running.
+
+Then read `references/report-template.md` and fill it in. Save to `qa-report.md`.
 Print the verdict line immediately.
 
 **Report style: caveman.** Few words. Short sentences. No fluff. Keep originality (all sections,
@@ -437,11 +502,22 @@ Keep file paths, error messages, and technical details full. Only prose gets tri
 
 ## Git Safety
 
-**Read-only.** Never `add`, `commit`, `push`, `merge`, `rebase`, `reset`, `revert`, `stash`,
-`cherry-pick`, `tag`, `rm`, `mv`, or `clean`. Never modify source files.
-Only exception: `checkout`/`pull` in Issue Fetch Flow for branch switching.
-Only files this skill may write: `qa-report.md` and `/tmp/eb-issue-details.md`.
-Found a bug? Report it in the QA report -- never fix it.
+**Source-safe, not strictly read-only — be honest about what this skill touches.**
+
+Never `add`, `commit`, `push`, `merge`, `rebase`, `reset`, `revert`, `stash`, `cherry-pick`,
+`tag`, `rm`, `mv`, or `clean`. Never edit source files. Found a bug? Report it — never fix it.
+
+The skill DOES make two reversible changes, and must leave the repo as it found it:
+
+1. **Branch switching** (Issue Fetch Flow only): `fetch` / `checkout` / `pull`.
+   - **Refuse on a dirty worktree** — never checkout over uncommitted work; ask the user instead.
+   - **Record the starting branch** (`ORIG_BRANCH_*`) before switching.
+   - **Restore it at the end** (Phase 6), even on failure:
+     `git -C <component_path> checkout "$ORIG_BRANCH_<comp>"`
+2. **Building** (`pnpm install` / `pnpm run build`): this rewrites `dist/` (and may touch
+   `node_modules`/lockfile). Only run when in scope. Mention in the report that a build was run.
+
+Files this skill may write: `qa-report.md` and `/tmp/eb-issue-details.md`. Nothing else.
 
 ## Important Notes
 
@@ -449,5 +525,7 @@ Found a bug? Report it in the QA report -- never fix it.
 - **Read-only.** Never modifies, commits, or pushes.
 - **Ask when stuck, not upfront.** Ask for context (pages, credentials, settings) when you need it, not all at Phase 0.
 - Flag security vulnerabilities regardless of whether related to current change.
-- Honest verdicts: PASS = confident. PARTIAL = some unverified. FAIL = something broken.
+- Honest verdicts: **PASS = confirmed by actually running it** (or a pure code-fact marked `Code`).
+  PARTIAL = some items unverified (visual skipped/blocked). FAIL = something broken. A code-only
+  guess about runtime/UI behavior is never a PASS.
 - Ask permission before activating/deactivating plugins or changing settings.

@@ -169,11 +169,17 @@ All scripts use `pnpm` and accept the plugin directory as the first argument.
 
 ## Git safety
 
-This skill is **read-only** for git repositories. It will never modify your code or push anything.
+This skill is **source-safe**: it never edits your code, and never commits, pushes, or rewrites
+history. It does make two reversible changes, and restores your repo afterward:
+
+- **Branch switching** (issue-fetch flow only): it refuses to switch over a dirty worktree, records
+  your starting branch, and checks it back out when done.
+- **Building**: `pnpm run build` rewrites `dist/` (and may touch `node_modules`/lockfile). Only runs
+  for in-scope components, and the report notes when a build was run.
 
 **Allowed:**
 - `git diff`, `git log`, `git status`, `git branch`, `git rev-parse`, `git fetch`
-- `git checkout` / `git pull` -- only when switching branches via issue fetch flow
+- `git checkout` / `git pull` -- only when switching branches via issue fetch flow (with restore)
 
 **Blocked:**
 - `git add`, `git commit`, `git push`, `git merge`, `git rebase`, `git reset`, `git revert`, `git stash`, `git cherry-pick`, `git tag`, `git rm`, `git mv`, `git clean`
